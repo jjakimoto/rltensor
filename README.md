@@ -1,2 +1,1 @@
-# rltensor
-Reinforcement Learning with tensorflow
+# RL
