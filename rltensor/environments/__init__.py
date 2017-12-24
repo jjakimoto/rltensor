@@ -1,2 +1,2 @@
-from .trade_environment import TradeEnvironment
-from .wrapper import RepeatEnvWrapper
+from .trade_env import TradeEnv
+from .wrapper import GymEnvWrapper

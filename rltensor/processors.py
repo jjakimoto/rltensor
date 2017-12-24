@@ -26,15 +26,16 @@ class AtariProcessor(DefaultProcessor):
         self.reward_min = reward_min
         self.reward_max = reward_max
         self.input_shape = (height, width)
+        self.scale = 255
 
     def preprocess(self, observation, action, reward, terminal):
         observation = resize_data([observation], self.height, self.width)[0]
         observation = rgb2gray(observation)
-        observation = np.uint8(observation * 255)
+        observation = np.uint8(observation * self.scale)
         # Make the same rewards for every games
         reward = min(self.reward_max, max(self.reward_min, reward))
         return observation, action, reward, terminal
 
     def tensor_process(self, x):
         # change to (batch, width, hight, window_length)
-        return tf.transpose(x, [0, 2, 3, 1])
+        return tf.transpose(x, [0, 2, 3, 1]) / self.scale

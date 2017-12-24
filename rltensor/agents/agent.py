@@ -4,9 +4,10 @@ import os
 from copy import deepcopy
 
 from rltensor.processors import DefaultProcessor
+from rltensor.executions import RunnerMixin
 
 
-class Agent(object):
+class Agent(RunnerMixin):
     """Base Agent for RL
 
     Parameters
@@ -40,11 +41,14 @@ class Agent(object):
     You have to define either of state_spec or processor.
     """
 
-    def __init__(self, action_spec,
+    def __init__(self, env, action_spec,
                  state_spec=None, processor=None,
                  optimizer_spec=None, lr_spec=None,
                  t_learn_start=100, t_update_freq=4,
-                 min_r=None, max_r=None, sess=None, *args, **kwargs):
+                 min_r=None, max_r=None, sess=None,
+                 env_name="env", tensorboard_dir="./logs", *args, **kwargs):
+        self.env = env
+        self.env_name = env_name
         self.action_spec = action_spec
         self.action_shape = self.action_spec["shape"]
         assert state_spec or processor,\
@@ -69,18 +73,25 @@ class Agent(object):
         if sess is None:
             sess = tf.Session()
         self.sess = sess
+        self.tensorboard_dir = tensorboard_dir
 
         self._global_step = tf.Variable(0, trainable=False)
+        self._num_episode = tf.Variable(0, trainable=False)
         # Build tensorflow network
         st = time.time()
         print("Building tensorflow graph...")
         with self.sess.as_default():
             self.update_step_op = tf.assign(self._global_step,
                                             self._global_step + 1)
+            self.update_episode_op = tf.assign(self._num_episode,
+                                               self._num_episode + 1)
             self.training_ph = tf.placeholder(tf.bool, (), name="training_ph")
             self.learning_rate_op = self._get_learning_rate(self.lr_spec)
             self._build_graph()
             self.saver = tf.train.Saver()
+            with tf.name_scope("summary"):
+                self._build_summaries()
+            self.sess.run(tf.global_variables_initializer())
         print("Finished building tensorflow graph, spent time:",
               time.time() - st)
 
@@ -194,9 +205,16 @@ class Agent(object):
     def update_step(self):
         self.sess.run(self.update_step_op)
 
+    def update_episode(self):
+        self.sess.run(self.update_episode_op)
+
     @property
     def global_step(self):
         return self._global_step.eval(session=self.sess)
+
+    @property
+    def num_episode(self):
+        return self._num_episode.eval(session=self.sess)
 
     @property
     def learning_rate(self):

@@ -10,7 +10,7 @@ from rltensor.memories import SequentialMemory, PrioritizedMemory
 
 class DQN(Agent):
 
-    def __init__(self, action_spec,
+    def __init__(self, env, action_spec,
                  state_spec=None, processor=None,
                  critic_spec=None,
                  optimizer_spec=None, lr_spec=None,
@@ -19,7 +19,8 @@ class DQN(Agent):
                  is_prioritized=True, batch_size=32, error_clip=1.0,
                  discount=0.99, t_target_q_update_freq=10000, double_q=True,
                  t_learn_start=100, t_update_freq=1,
-                 min_r=None, max_r=None, sess=None, *args, **kwargs):
+                 min_r=None, max_r=None, sess=None,
+                 env_name="env", tensorboard_dir="./logs", *args, **kwargs):
         self.critic_spec = critic_spec
         self.critic_cls = critic_cls
         self.explore_spec = explore_spec
@@ -36,11 +37,20 @@ class DQN(Agent):
         self.double_q = double_q
 
         super(DQN, self).__init__(
-            action_spec,
-            state_spec, processor,
-            optimizer_spec, lr_spec,
-            t_learn_start, t_update_freq,
-            min_r, max_r, sess, *args, **kwargs)
+            env=env,
+            action_spec=action_spec,
+            state_spec=state_spec,
+            processor=processor,
+            optimizer_spec=optimizer_spec,
+            lr_spec=lr_spec,
+            t_learn_start=t_learn_start,
+            t_update_freq=t_update_freq,
+            min_r=min_r,
+            max_r=max_r,
+            sess=sess,
+            env_name="env",
+            tensorboard_dir=tensorboard_dir,
+            *args, **kwargs)
 
     def _build_graph(self):
         """Build all of the network and optimizations"""
@@ -75,20 +85,17 @@ class DQN(Agent):
         self.action_q_val = tf.reduce_sum(self.q_val * action_one_hot, axis=-1)
         if self.double_q:
             max_one_hot = tf.one_hot(self.max_action, depth=self.action_shape)
-            target_max_q_val = tf.reduce_sum(self.target_q_val * max_one_hot,
-                                             axis=-1)
+            self.target_max_q_val =\
+                tf.reduce_sum(self.target_q_val * max_one_hot, axis=-1)
         else:
-            target_max_q_val = tf.reduce_max(self.target_q_val, axis=-1)
-
-        self.target_max_q_val = target_max_q_val
+            self.target_max_q_val = tf.reduce_max(self.target_q_val, axis=-1)
         # Build objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32, (None,), name="reward_ph")
-        # self.target_ph = tf.placeholder(tf.float32, (None,), name="target_ph")
-        zeros = tf.zeros_like(target_max_q_val)
+        zeros = tf.zeros_like(self.target_max_q_val)
         self.target_value = tf.where(self.terminal_ph,
-                                x=zeros,
-                                y=self.discount * target_max_q_val)
+                                     x=zeros,
+                                     y=self.discount * self.target_max_q_val)
         self.error = self.reward_ph + self.target_value - self.action_q_val
         # self.error = self.reward_ph + self.target_ph - self.action_q_val
         _error = tf.abs(self.error)
@@ -124,13 +131,8 @@ class DQN(Agent):
                 is_update = True
             else:
                 is_update = False
-            self.memory.add_weights()
-            weights = self.memory.get_weights()
-            experiences = self.memory.sample(self.batch_size, weights)
-            weights = self.memory.get_importance_weights()
-            if weights is None:
-                weights = np.ones(self.batch_size)
-            result = self.q_learning_minibatch(experiences, weights, is_update)
+            experiences = self.memory.sample(self.batch_size)
+            result = self.q_learning_minibatch(experiences, is_update)
         else:
             result = None
 
@@ -139,7 +141,7 @@ class DQN(Agent):
 
         return result
 
-    def q_learning_minibatch(self, experiences, batch_weights, is_update=True):
+    def q_learning_minibatch(self, experiences, is_update=True):
         feed_dict = {
             self.state_ph: [experience.state0 for experience in experiences],
             self.target_state_ph: [experience.state1
@@ -184,9 +186,11 @@ class DQN(Agent):
 
     def _get_memory(self, window_length, limit, is_prioritized):
         if is_prioritized:
-            return PrioritizedMemory(window_length, limit)
+            return PrioritizedMemory(limit=limit,
+                                     window_length=window_length)
         else:
-            return SequentialMemory(window_length, limit)
+            return SequentialMemory(limit=limit,
+                                    window_length=window_length)
 
     def _get_epsilon(self):
         t_ep_end = self.explore_spec["t_ep_end"]

@@ -14,6 +14,7 @@ def agent_config():
                  "lr_decay": 0.96, "lr_min": 2.5e-4},
         t_learn_start=5 * scale,
         t_update_freq=4,
+        tensorboard_dir="./logs"
     )
     return _agent_config
 
@@ -32,7 +33,7 @@ def dqn_config():
         ],
         processor=AtariProcessor(84, 84),
         explore_spec={"t_ep_end": 100 * scale, "ep_start": 1.0, "ep_end": 0.1},
-        memory_limit=50 * scale,
+        memory_limit=100 * scale,
         window_length=4,
         is_prioritized=False,
         batch_size=32,

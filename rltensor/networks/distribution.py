@@ -1,5 +1,5 @@
 import tensorflow as tf
-import numpy as np
+from copy import deepcopy
 
 from .ff import FeedForward
 from rltensor import utils
@@ -9,6 +9,7 @@ class Dirichlet(FeedForward):
     def __init__(self, model_params, action_dim,
                  scope_name=None, max_value=1.0, min_value=0.0,
                  *args, **kwargs):
+        model_params = deepcopy(model_params)
         if scope_name is None:
             scope_name = "dirichlet"
         model_params.append({"name": "dense",
@@ -47,6 +48,7 @@ class Dirichlet(FeedForward):
 class Categorical(FeedForward):
     def __init__(self, model_params, action_dim,
                  scope_name=None, *args, **kwargs):
+        model_params = deepcopy(model_params)
         if scope_name is None:
             scope_name = "categorical"
         self.action_dim = action_dim

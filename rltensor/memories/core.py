@@ -35,47 +35,58 @@ class RingBuffer(object):
         self.data[(self.start + self.length - 1) % self.maxlen] = v
 
 
+def zeroed_observation(observation):
+    if hasattr(observation, 'shape'):
+        return np.zeros(observation.shape)
+    elif hasattr(observation, '__iter__'):
+        out = []
+        for x in observation:
+            out.append(zeroed_observation(x))
+        return out
+    else:
+        return 0.
+
+
 class BaseMemory(object):
     def __init__(self, window_length, ignore_episode_boundaries=False):
         self.window_length = window_length
-        self.recent_observations = deque(maxlen=window_length)
-        self.recent_terminals = deque(maxlen=window_length)
         self.ignore_episode_boundaries = ignore_episode_boundaries
 
-    def sample(self, *args, **kwargs):
+        self.recent_observations = deque(maxlen=window_length)
+        self.recent_terminals = deque(maxlen=window_length)
+
+    def sample(self, batch_size, batch_idxs=None):
         raise NotImplementedError()
 
-    def append(self, observation, action, reward, terminal, *args, **kwargs):
+    def append(self, observation, action, reward, terminal, is_store=True):
         self.recent_observations.append(observation)
         self.recent_terminals.append(terminal)
-        self.obs_shape = observation.shape
 
-    def get_recent_state(self, observation=None):
-        _observations = deepcopy(self.recent_observations)
-        if observation is not None:
-            _observations.append(observation)
-        while len(_observations) < self.window_length:
-            _observations.insert(0, np.zeros(self.obs_shape))
-        # Make sure window length observations
-        assert len(_observations) == self.window_length
-        return np.array(_observations)
+    def get_recent_state(self):
+        # This code is slightly complicated by the fact that subsequent observations might be
+        # from different episodes. We ensure that an experience never spans multiple episodes.
+        # This is probably not that important in practice but it seems cleaner.
+        state = []
+        idx = len(self.recent_observations) - 1
+        for offset in range(0, self.window_length):
+            current_idx = idx - offset
+            current_terminal = self.recent_terminals[current_idx - 1] if current_idx - 1 >= 0 else False
+            if current_idx < 0 or (not self.ignore_episode_boundaries and current_terminal):
+                # The previously handled observation was terminal, don't add the current one.
+                # Otherwise we would leak into a different episode.
+                break
+            state.insert(0, self.recent_observations[current_idx])
+        while len(state) < self.window_length:
+            state.insert(0, zeroed_observation(state[0]))
+        return state
+
+    def get_config(self):
+        config = {
+            'window_length': self.window_length,
+            'ignore_episode_boundaries': self.ignore_episode_boundaries,
+        }
+        return config
 
     def reset(self):
         self.recent_observations = deque(maxlen=self.window_length)
         self.recent_terminals = deque(maxlen=self.window_length)
-
-    @property
-    def nb_entries(self):
-        return len(self.observations)
-
-    def update_weights(self, *args, **kwargs):
-        pass
-
-    def add_weights(self):
-        pass
-
-    def get_weights(self):
-        return None
-
-    def get_importance_weights(self, batch_size=None):
-        return None
