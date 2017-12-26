@@ -56,7 +56,7 @@ class TradeEnv(Env):
 
     def _reset(self):
         self.current_time = self.start
-        self.cirrent_step = 0
+        self.current_step = 0
         current_bars = self._get_bar()
         observation = self._get_observation(current_bars)
         return observation

@@ -13,19 +13,19 @@ class TradeRunnerMixin(RunnerMixin):
                     histogram_summary_tags=None):
         if scalar_summary_tags is None:
             scalar_summary_tags = [
-                'average.loss',
-                'average.returns',
-                'drawdown',
-                'cumulative_returns',
+                'training.average_loss',
+                'training.average_returns',
+                'training.drawdown',
+                'training.cumulative_returns',
+                'training.learning_rate',
+                'training.num_step_per_sec',
+                'training.time',
                 'episode.final_value',
                 'episode.max_returns',
                 'episode.min_returns',
                 'episode.avg_returns',
                 'episode.maximum_drawdowns',
                 'episode.sharp_ratio',
-                'training.learning_rate',
-                'training.num_step_per_sec',
-                'training.time',
                 'test.cumulative_returns',
                 'test.drawdowns',
                 'test.final_value',
@@ -50,7 +50,7 @@ class TradeRunnerMixin(RunnerMixin):
             *args, **kwargs):
         # Keep track of episode reward and episode length for statistics.
         self.start_time = time.time()
-        self._reset(self.agent, self.env)
+        self._reset(self.env)
 
         # Determine if it has to be randomly initialized
         init_flag = True
@@ -174,18 +174,14 @@ class TradeRunnerMixin(RunnerMixin):
 
     def _record(self, observation, reward, terminal, info,
                 action, response, log_freq):
-        q, q_max, loss, error, is_update = response
+        loss, is_update = response
         step = self.agent.global_step
         # update statistics
-        self.total_reward.append(reward)
-        self.total_loss.append(loss)
-        self.total_q_val.append(np.mean(q))
-        self.total_q_max_val.append(np.mean(q_max))
-        self.ep_actions.append(action)
-        self.ep_errors.append(error)
-        self.ep_rewards.append(reward)
+        self.total_returns.append(reward)
+        self.total_losses.append(loss)
+        self.ep_returns.append(reward)
         self.ep_losses.append(loss)
-        self.ep_q_vals.append(np.mean(q))
+        self.ep_actions.append(action)
         # Write summary
         if log_freq is not None and step % log_freq == 0:
             num_per_sec = log_freq / (time.time() - self.record_st)
@@ -262,31 +258,16 @@ class TradeRunnerMixin(RunnerMixin):
             self._inject_summary(tag_dict, self.num_ep)
 
     def _build_recorders(self, avg_length):
-        self.total_reward = deque(maxlen=avg_length)
-        self.total_loss = deque(maxlen=avg_length)
-        self.total_q_val = deque(maxlen=avg_length)
-        self.total_q_max_val = deque(maxlen=avg_length)
-        self.ep_rewards = []
+        self.peak_pv = self.init_pv
+        self.cum_pv = self.init_pv
+        self.total_returns = deque(maxlen=avg_length)
+        self.total_losses = deque(maxlen=avg_length)
+        self.ep_returns = []
         self.ep_losses = []
-        self.ep_q_vals = []
         self.ep_actions = []
-        self.ep_errors = []
+        self.ep_cum_returns = []
+        self.ep_drawdowns =[]
 
-        self.sp_list = []
-        self.mmd_list = []
-        self.final_pv_list = []
-        self.accumulated_pvs_list = []
-        self.draw_downs_list = []
-        # accumulate results
-        total_reward = deque(maxlen=avg_length)
-        total_loss = deque(maxlen=avg_length)
-        ep_rewards = []
-        ep_losses = []
-        ep_q_vals = []
-        ep_actions = []
-        ep_errors = []
-        step = self.agent.global_step
-        _st = self.st
 
     def _build_recorders_play(self, avg_length=None):
         self.ep_rewards = []
