@@ -46,7 +46,9 @@ class Agent(RunnerMixin):
                  optimizer_spec=None, lr_spec=None,
                  t_learn_start=100, t_update_freq=4,
                  min_r=None, max_r=None, sess=None,
-                 env_name="env", tensorboard_dir="./logs", *args, **kwargs):
+                 env_name="env", tensorboard_dir="./logs",
+                 load_file_path=None,
+                 is_debug=False, *args, **kwargs):
         self.env = env
         self.env_name = env_name
         self.action_spec = action_spec
@@ -74,6 +76,8 @@ class Agent(RunnerMixin):
             sess = tf.Session()
         self.sess = sess
         self.tensorboard_dir = tensorboard_dir
+        self.load_file_path = load_file_path
+        self.is_debug = is_debug
 
         self._global_step = tf.Variable(0, trainable=False)
         self._num_episode = tf.Variable(0, trainable=False)
@@ -92,6 +96,8 @@ class Agent(RunnerMixin):
             with tf.name_scope("summary"):
                 self._build_summaries()
             self.sess.run(tf.global_variables_initializer())
+            if self.load_file_path is not None:
+                self.load_params(self.load_file_path)
         print("Finished building tensorflow graph, spent time:",
               time.time() - st)
 

@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 import random
 
@@ -20,16 +19,18 @@ class DQN(Agent):
                  discount=0.99, t_target_q_update_freq=10000, double_q=True,
                  t_learn_start=100, t_update_freq=1,
                  min_r=None, max_r=None, sess=None,
-                 env_name="env", tensorboard_dir="./logs", *args, **kwargs):
+                 env_name="env", tensorboard_dir="./logs",
+                 load_file_path=None,
+                 is_debug=False, *args, **kwargs):
         self.critic_spec = critic_spec
         self.critic_cls = critic_cls
         self.explore_spec = explore_spec
         self.memory_limit = memory_limit
         self.window_length = window_length
         self.is_prioritized = is_prioritized
-        self.memory = self._get_memory(self.window_length,
-                                       self.memory_limit,
-                                       self.is_prioritized)
+        self.memory = self._get_memory(limit=self.memory_limit,
+                                       window_length=self.window_length,
+                                       is_prioritized=self.is_prioritized)
         self.batch_size = batch_size
         self.error_clip = error_clip
         self.discount = discount
@@ -50,6 +51,8 @@ class DQN(Agent):
             sess=sess,
             env_name="env",
             tensorboard_dir=tensorboard_dir,
+            load_file_path=load_file_path,
+            is_debug=is_debug,
             *args, **kwargs)
 
     def _build_graph(self):
@@ -157,7 +160,13 @@ class DQN(Agent):
         feed_dict[self.target_ph] = target_value
         """
         if is_update:
+            if self.is_debug:
+                self.previous_target_vars =\
+                    self.sess.run(self.target_critic_variables)
+                self.previoust_vars = self.sess.run(self.critic_variables)
             self.sess.run(self.critic_optim, feed_dict=feed_dict)
+            if self.is_debug:
+                self.debug_learning()
         q_t, q_max, loss, error = self.sess.run([self.action_q_val,
                                                  self.target_max_q_val,
                                                  self.critic_loss,
@@ -184,7 +193,7 @@ class DQN(Agent):
             update_op.append(tf.assign(target_var, var))
         return update_op
 
-    def _get_memory(self, window_length, limit, is_prioritized):
+    def _get_memory(self, limit, window_length, is_prioritized):
         if is_prioritized:
             return PrioritizedMemory(limit=limit,
                                      window_length=window_length)
@@ -206,6 +215,8 @@ class DQN(Agent):
 
     def update_target_q_network(self):
         self.sess.run(self.update_target_q_network_op)
+        if self.is_debug:
+            self.debug_update()
 
     def init_update(self):
         self.update_target_q_network()
@@ -227,3 +238,22 @@ class DQN(Agent):
     @property
     def epsilon(self):
         return self.epsilon_tf.eval(session=self.sess)
+
+    def debug_update(self):
+        target_critic_vars = self.sess.run(self.target_critic_variables)
+        critic_vars = self.sess.run(self.critic_variables)
+        # Make sure the copy of ciritic network.
+        print(len(critic_vars))
+        for x, target_x in zip(critic_vars, target_critic_vars):
+            assert (x == target_x).all()
+
+    def debug_learning(self):
+        # Make sure target network is not updated through optimization
+        after_vars = self.sess.run(self.target_critic_variables)
+        for after, before in zip(after_vars, self.previous_target_vars):
+            assert (after == before).all()
+        self.previous_target_vars = after_vars
+        # Q network
+        after_vars = self.sess.run(self.critic_variables)
+        for after, before in zip(after_vars, self.previoust_vars):
+            assert (after != before).any()

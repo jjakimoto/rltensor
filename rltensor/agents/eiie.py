@@ -8,7 +8,7 @@ from rltensor.memories import TSMemory
 
 class EIIE(Agent):
 
-    def __init__(self, action_spec,
+    def __init__(self, env, action_spec,
                  state_spec=None, processor=None,
                  actor_spec=None,
                  optimizer_spec=None, lr_spec=None,
@@ -16,24 +16,38 @@ class EIIE(Agent):
                  memory_limit=10000, window_length=4, beta=0.1,
                  is_prioritized=True, batch_size=32, error_clip=1.0,
                  t_learn_start=100, t_update_freq=1,
-                 min_r=None, max_r=None, sess=None, *args, **kwargs):
+                 min_r=None, max_r=None, sess=None,
+                 env_name="env", tensorboard_dir="./logs",
+                 load_file_path=None,
+                 is_debug=False, *args, **kwargs):
         self.actor_spec = actor_spec
         self.actor_cls = actor_cls
         self.explore_spec = explore_spec
         self.memory_limit = memory_limit
         self.window_length = window_length
         self.beta = beta
-        self.memory = self._get_memory(self.window_length,
-                                       self.memory_limit,
-                                       self.beta)
+        self.memory = self._get_memory(limit=self.memory_limit,
+                                       window_length=self.window_length,
+                                       beta=self.beta)
         self.batch_size = batch_size
 
         super(EIIE, self).__init__(
-            action_spec,
-            state_spec, processor,
-            optimizer_spec, lr_spec,
-            t_learn_start, t_update_freq,
-            min_r, max_r, sess, *args, **kwargs)
+            env=env,
+            action_spec=action_spec,
+            state_spec=state_spec,
+            processor=processor,
+            optimizer_spec=optimizer_spec,
+            lr_spec=lr_spec,
+            t_learn_start=t_learn_start,
+            t_update_freq=t_update_freq,
+            min_r=min_r,
+            max_r=max_r,
+            sess=sess,
+            env_name="env",
+            tensorboard_dir=tensorboard_dir,
+            load_file_path=load_file_path,
+            is_debug=is_debug,
+            *args, **kwargs)
 
     def _build_graph(self):
         """Build all of the network and optimizations"""
@@ -108,8 +122,10 @@ class EIIE(Agent):
                                           self.training_ph: False})[0]
         return action
 
-    def _get_memory(self, window_length, limit, beta):
-        return TSMemory(window_length, limit)
+    def _get_memory(self, limit, window_length, beta):
+        return TSMemory(limit=limit,
+                        window_length=window_length,
+                        beta=beta)
 
     def init_update(self):
         pass

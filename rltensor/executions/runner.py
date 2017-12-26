@@ -67,7 +67,7 @@ class RunnerMixin(object):
                         observation, reward, terminal, info =\
                             _env.step(action, is_training=True)
                         if terminal:
-                            self._reset(self, _env)
+                            self._reset(_env)
                         self.observe(observation, action,
                                      reward, terminal,
                                      training=False, is_store=False)
@@ -120,7 +120,7 @@ class RunnerMixin(object):
         self._build_recorders_play()
         for num_ep in range(1, num_episode + 1):
             # initialize enviroment
-            self._reset(self, _env)
+            self._reset(_env)
             terminal = False
             step = 1
             while not terminal:
