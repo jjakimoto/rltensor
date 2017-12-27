@@ -52,16 +52,16 @@ class TradeEnv(Env):
         self.current_time = self.start
         self.current_step = 0
         # Use for calculate return
-        self.prev_states = self._get_bar()
+        self.prev_bars = self._get_bar()
 
     def _reset(self):
         self.current_time = self.start
         self.current_step = 0
-        current_bars = self._get_bar()
-        observation = self._get_observation(current_bars)
+        self.prev_bars = self._get_bar()
+        observation = self._get_observation(self.prev_bars)
         return observation
 
-    def _step(self, action):
+    def _step(self, action, is_training=True, *args, **kwargs):
         current_bars = self._get_bar()
         returns = []
         for symbol in self.symbols:
@@ -72,6 +72,7 @@ class TradeEnv(Env):
         self._update_time()
         observation = self._get_observation(current_bars)
         terminal = False
+        # Log return
         reward = np.sum(returns * action)
         info = {}
         info["returns"] = returns

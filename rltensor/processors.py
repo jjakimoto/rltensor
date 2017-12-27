@@ -39,3 +39,10 @@ class AtariProcessor(DefaultProcessor):
     def tensor_process(self, x):
         # change to (batch, width, hight, window_length)
         return tf.transpose(x, [0, 2, 3, 1]) / self.scale
+
+
+class TradeProcessor(DefaultProcessor):
+
+    def preprocess(self, observation, action, reward, terminal):
+        reward = np.log(1. + reward)
+        return observation, action, reward, terminal

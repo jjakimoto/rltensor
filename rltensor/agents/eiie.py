@@ -4,11 +4,13 @@ from .agent import Agent
 from rltensor.utils import get_shape
 from rltensor.networks import Dirichlet
 from rltensor.memories import TSMemory
+from rltensor.processors import TradeProcessor
+from rltensor.executions import TradeRunnerMixin
 
 
-class EIIE(Agent):
+class EIIE(TradeRunnerMixin, Agent):
 
-    def __init__(self, env, action_spec,
+    def __init__(self, init_pv=100, env=None, action_spec=None,
                  state_spec=None, processor=None,
                  actor_spec=None,
                  optimizer_spec=None, lr_spec=None,
@@ -20,6 +22,7 @@ class EIIE(Agent):
                  env_name="env", tensorboard_dir="./logs",
                  load_file_path=None,
                  is_debug=False, *args, **kwargs):
+        self.init_pv = init_pv
         self.actor_spec = actor_spec
         self.actor_cls = actor_cls
         self.explore_spec = explore_spec
@@ -30,7 +33,9 @@ class EIIE(Agent):
                                        window_length=self.window_length,
                                        beta=self.beta)
         self.batch_size = batch_size
-
+        # Make sure having enough data for sampling
+        t_learn_start = max(t_learn_start, batch_size + window_length - 1)
+        processor = TradeProcessor(state_spec["shape"])
         super(EIIE, self).__init__(
             env=env,
             action_spec=action_spec,
@@ -54,14 +59,16 @@ class EIIE(Agent):
         # state shape has to be (batch, length,) + input_dim
         self.state_ph = tf.placeholder(
             tf.float32,
-            get_shape(self.state_shape, maxlen=self.window_length),
+            get_shape(self.state_shape,
+                      is_sequence=True,
+                      maxlen=self.window_length),
             name='state_ph')
         _state_ph = self.processor.tensor_process(self.state_ph)
         # Build actor network
-        self.actor = self.actor_cls(self.action_dim,
-                                    self.actor_spec,
+        self.actor = self.actor_cls(self.actor_spec,
+                                    self.action_shape,
                                     scope_name="actor")
-        self.actor_action = self.actor(_state_ph, self.training)
+        self.actor_action = self.actor(_state_ph, self.training_ph)
         # Build critic objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32,
@@ -83,9 +90,9 @@ class EIIE(Agent):
         self.policy_action = self.actor_action
 
     def _observe(self, observation, action, reward,
-                 terminal, training, is_store):
+                 terminal, info, training, is_store):
         self.memory.append(observation, action, reward,
-                           terminal, is_store=is_store)
+                           terminal, info, is_store=is_store)
 
         step = self.global_step
 
@@ -102,12 +109,9 @@ class EIIE(Agent):
 
     def learning_minibatch(self, experiences, is_update=True):
         feed_dict = {
-            self.state_ph: [experience.state0 for experience in experiences],
-            self.target_state_ph: [experience.state1
-                                   for experience in experiences],
+            self.state_ph: [experience.state for experience in experiences],
             self.reward_ph: [experience.reward for experience in experiences],
-            self.action_ph: [experience.action for experience in experiences],
-            self.terminal_ph: [experience.terminal1
+            self.terminal_ph: [experience.terminal
                                for experience in experiences],
             self.training_ph: True,
         }

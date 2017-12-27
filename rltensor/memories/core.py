@@ -1,5 +1,4 @@
 from collections import namedtuple, deque
-from copy import deepcopy
 import numpy as np
 
 
@@ -19,7 +18,7 @@ class RingBuffer(object):
 
     def __getitem__(self, idx):
         if idx < 0 or idx >= self.length:
-            raise KeyError()
+            raise KeyError("idx={}".format(idx))
         return self.data[(self.start + idx) % self.maxlen]
 
     def append(self, v):
@@ -58,7 +57,7 @@ class BaseMemory(object):
     def sample(self, batch_size, batch_idxs=None):
         raise NotImplementedError()
 
-    def append(self, observation, action, reward, terminal, is_store=True):
+    def append(self, observation, action, reward, terminal, info, is_store=True):
         self.recent_observations.append(observation)
         self.recent_terminals.append(terminal)
 

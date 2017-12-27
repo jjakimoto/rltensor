@@ -183,7 +183,7 @@ class Agent(RunnerMixin):
         return optim
 
     def observe(self, observation, action, reward,
-                terminal, training, is_store):
+                terminal, info, training, is_store):
         observation, action, reward, terminal =\
             self.processor.preprocess(observation,
                                       action,
@@ -195,10 +195,10 @@ class Agent(RunnerMixin):
         if self.min_r is not None:
             reward = max(self.min_r, reward)
         return self._observe(observation, action, reward,
-                             terminal, training, is_store)
+                             terminal, info, training, is_store)
 
     def _observe(self, observation, action, reward,
-                 terminal, training, is_store):
+                 terminal, info, training, is_store):
         raise NotImplementedError("Need to define _observe at a subclass of Agent")
 
     def predict(self, state, *args, **kwargs):

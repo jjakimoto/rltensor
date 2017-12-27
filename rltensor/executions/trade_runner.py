@@ -1,11 +1,14 @@
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
-
 import time
-from six.moves import xrange
 import numpy as np
+from collections import deque
+
 from .runner import RunnerMixin
+
+
+def calc_sharp_ratio(returns, bench_mark=0, eps=1e-6):
+    var = np.var(returns)
+    mean = np.mean(returns)
+    return (mean - bench_mark) / (np.sqrt(var) + eps)
 
 
 class TradeRunnerMixin(RunnerMixin):
@@ -13,6 +16,7 @@ class TradeRunnerMixin(RunnerMixin):
                     histogram_summary_tags=None):
         if scalar_summary_tags is None:
             scalar_summary_tags = [
+                'training.num_of_game',
                 'training.average_loss',
                 'training.average_returns',
                 'training.drawdown',
@@ -36,168 +40,49 @@ class TradeRunnerMixin(RunnerMixin):
 
         if histogram_summary_tags is None:
             histogram_summary_tags = ['episode.returns', 'test.returns']
-            for i in range(env.action_dim):
+            for i in range(self.env.action_dim):
                 histogram_summary_tags.append("episode.action_{}".format(i))
                 histogram_summary_tags.append("test.action_{}".format(i))
         self.histogram_summary_tags = histogram_summary_tags
 
-    def fit(self, t_max, num_max_start_steps=0,
-            save_file_path=None,
-            overwrite=True,
-            log_freq=1000,
-            avg_length=1000,
-            init_pv=100.,
-            *args, **kwargs):
-        # Keep track of episode reward and episode length for statistics.
-        self.start_time = time.time()
-        self._reset(self.env)
+    def _update_status(self, observation, reward, terminal, info):
+        # Calculate portfolio value
+        self.cum_pv *= (1. + reward)
+        # Calc drawdown
+        if self.cum_pv > self.peak_pv:
+            self.peak_pv = self.cum_pv
+        self.drawdown = (self.peak_pv - self.cum_pv) / self.peak_pv
 
-        # Determine if it has to be randomly initialized
-        init_flag = True
-        # Start from the middle of training
-        # t_max = t_max - step
-        _env = self.env
-
-        episode_start_time = time.time()
-
-        self.agent.reset()
-        state = self.environment.reset()
-        accumulated_pv = init_pv
-        peak_pv = init_pv
-        self.accumulated_pvs = [accumulated_pv]
-        draw_downs = [0.]
-        returns = [0.]
-        self.episode_timestep = 0
-        try:
-            for t in tqdm(xrange(t_max)):
-                if init_flag:
-                    init_flag = False
-                    if num_max_start_steps == 0:
-                        num_random_start_steps = 0
-                    else:
-                        num_random_start_steps =\
-                            np.random.randint(num_max_start_steps)
-                    for _ in xrange(num_random_start_steps):
-                        action = _env.action_space.sample()
-                        observation, reward, terminal, info =\
-                            _env.step(action)
-                        if terminal:
-                            self._reset(self.agent, _env)
-                        self.agent.observe(observation, action,
-                                           reward, terminal,
-                                           training=False, is_store=False)
-                # Update step
-                self.agent.update_step()
-                step = self.agent.global_step
-                # 1. predict
-                state = self.agent.get_recent_state()
-                action = self.agent.predict(state)
-                # 2. act
-                observation, reward, terminal, info = _env.step(action)
-                # 3. store data and train network
-                if step < self.agent.t_learn_start:
-                    response = self.agent.observe(observation, action, reward,
-                                                  terminal, training=False,
-                                                  is_store=True)
-                    if terminal:
-                        self._reset(self.agent, _env)
-                else:
-                    response = self.agent.observe(observation, action, reward,
-                                                  terminal, training=True,
-                                                  is_store=True)
-
-                    loss, is_update = response
-                    step = self.agent.global_step
-                    # update statistics
-                    total_reward.append(reward)
-                    total_loss.append(loss)
-                    total_q_val.append(np.mean(q))
-                    total_q_max_val.append(np.mean(q_max))
-                    ep_actions.append(action)
-                    ep_errors.append(error)
-                    ep_rewards.append(reward)
-                    ep_losses.append(loss)
-                    ep_q_vals.append(np.mean(q))
-                    # Write summary
-                    if log_freq is not None and step % log_freq == 0:
-                        num_per_sec = log_freq / (time.time() - _st)
-                        _st = time.time()
-                        epsilon = self.agent.epsilon
-                        learning_rate = self.agent.learning_rate
-                        avg_r = np.mean(total_reward)
-                        avg_loss = np.mean(total_loss)
-                        avg_q_val = np.mean(total_q_val)
-                        avg_q_max_val = np.mean(total_q_max_val)
-                        tag_dict = {'episode.num_of_game': self.num_ep,
-                                    'average.reward': avg_r,
-                                    'average.loss': avg_loss,
-                                    'average.q': avg_q_val,
-                                    'average.q_max': avg_q_max_val,
-                                    'training.epsilon': epsilon,
-                                    'training.learning_rate': learning_rate,
-                                    'training.num_step_per_sec': num_per_sec,
-                                    'training.time': time.time() - self.st}
-                        self._inject_summary(tag_dict, step)
-                    if terminal:
-                        try:
-                            cum_ep_reward = np.sum(ep_rewards)
-                            max_ep_reward = np.max(ep_rewards)
-                            min_ep_reward = np.min(ep_rewards)
-                            avg_ep_reward = np.mean(ep_rewards)
-                        except:
-                            cum_ep_reward = 0
-                            max_ep_reward = 0
-                            min_ep_reward = 0
-                            avg_ep_reward = 0
-
-                        tag_dict = {'episode.cumulative_reward': cum_ep_reward,
-                                    'episode.max_reward': max_ep_reward,
-                                    'episode.min_reward': min_ep_reward,
-                                    'episode.avg_reward': avg_ep_reward,
-                                    'episode.rewards': ep_rewards,
-                                    'episode.actions': ep_actions,
-                                    'episode.errors': ep_errors}
-                        self._inject_summary(tag_dict, self.num_ep)
-                        # Reset stored current states
-                        self._reset(self.agent, _env)
-                        ep_rewards = []
-                        ep_losses = []
-                        ep_q_vals = []
-                        ep_actions = []
-                        ep_errors = []
-                        self.num_ep += 1
-                        init_flag = True
-        except KeyboardInterrupt:
-            pass
-        # Update parameters before finishing
-        self.agent.save_params(save_file_path, True)
+    def _reset(self, env):
+        self.drawdown = 0
+        self.cum_pv = self.init_pv
+        self.peak_pv = self.init_pv
+        return super()._reset(env)
 
     def _record(self, observation, reward, terminal, info,
                 action, response, log_freq):
         loss, is_update = response
-        step = self.agent.global_step
-        # update statistics
+        step = self.global_step
+        # Update statistics
         self.total_returns.append(reward)
         self.total_losses.append(loss)
         self.ep_returns.append(reward)
         self.ep_losses.append(loss)
         self.ep_actions.append(action)
+        self.ep_cum_pvs.append(self.cum_pv)
+        self.ep_drawdowns.append(self.drawdown)
         # Write summary
         if log_freq is not None and step % log_freq == 0:
             num_per_sec = log_freq / (time.time() - self.record_st)
             self.record_st = time.time()
-            epsilon = self.agent.epsilon
-            learning_rate = self.agent.learning_rate
-            avg_r = np.mean(self.total_reward)
-            avg_loss = np.mean(self.total_loss)
-            avg_q_val = np.mean(self.total_q_val)
-            avg_q_max_val = np.mean(self.total_q_max_val)
-            tag_dict = {'episode.num_of_game': self.num_ep,
-                        'average.reward': avg_r,
-                        'average.loss': avg_loss,
-                        'average.q': avg_q_val,
-                        'average.q_max': avg_q_max_val,
-                        'training.epsilon': epsilon,
+            learning_rate = self.learning_rate
+            avg_r = np.mean(self.total_returns)
+            avg_loss = np.mean(self.total_losses)
+            tag_dict = {'training.num_of_game': self.num_episode,
+                        'training.average_returns': avg_r,
+                        'training.average_loss': avg_loss,
+                        'training.drawdown': self.drawdown,
+                        'training.cumulative_returns': self.cum_pv,
                         'training.learning_rate': learning_rate,
                         'training.num_step_per_sec': num_per_sec,
                         'training.time': time.time() - self.st}
@@ -205,31 +90,32 @@ class TradeRunnerMixin(RunnerMixin):
         if log_freq is not None:
             if terminal:
                 try:
-                    cum_ep_reward = np.sum(self.ep_rewards)
-                    max_ep_reward = np.max(self.ep_rewards)
-                    min_ep_reward = np.min(self.ep_rewards)
-                    avg_ep_reward = np.mean(self.ep_rewards)
+                    max_ep_returns = np.max(self.ep_returns)
+                    min_ep_returns = np.min(self.ep_returns)
+                    avg_ep_returns = np.mean(self.ep_returns)
+                    max_drawdowns = np.max(self.ep_drawdowns)
+                    sharp_ratio = calc_sharp_ratio(self.ep_returns)
                 except:
-                    cum_ep_reward = 0
-                    max_ep_reward = 0
-                    min_ep_reward = 0
-                    avg_ep_reward = 0
+                    max_ep_returns = 0
+                    min_ep_returns = 0
+                    avg_ep_returns = 0
+                    max_drawdowns = 0
+                    sharp_ratio = 0
 
-                tag_dict = {'episode.cumulative_reward': cum_ep_reward,
-                            'episode.max_reward': max_ep_reward,
-                            'episode.min_reward': min_ep_reward,
-                            'episode.avg_reward': avg_ep_reward,
-                            'episode.rewards': self.ep_rewards,
-                            'episode.actions': self.ep_actions,
-                            'episode.errors': self.ep_errors}
-                self._inject_summary(tag_dict, self.num_ep)
+                tag_dict = {'episode.maximum_drawdowns': max_drawdowns,
+                            'episode.max_returns': max_ep_returns,
+                            'episode.min_returns': min_ep_returns,
+                            'episode.avg_returns': avg_ep_returns,
+                            'episode.returns': self.ep_returns,
+                            # 'episode.actions': self.ep_actions,
+                            'episode.final_value': self.cum_pv,
+                            'episode.sharp_ratio': sharp_ratio}
+                self._inject_summary(tag_dict, self.num_episode)
                 # Reset stored current states
-                self.ep_rewards = []
+                self.ep_returns = []
                 self.ep_losses = []
-                self.ep_q_vals = []
+                self.ep_drawdowns = []
                 self.ep_actions = []
-                self.ep_errors = []
-                self.num_ep += 1
                 self.init_flag = True
 
     def _record_play(self, observation, reward, terminal, info):
@@ -258,16 +144,13 @@ class TradeRunnerMixin(RunnerMixin):
             self._inject_summary(tag_dict, self.num_ep)
 
     def _build_recorders(self, avg_length):
-        self.peak_pv = self.init_pv
-        self.cum_pv = self.init_pv
         self.total_returns = deque(maxlen=avg_length)
         self.total_losses = deque(maxlen=avg_length)
         self.ep_returns = []
         self.ep_losses = []
         self.ep_actions = []
-        self.ep_cum_returns = []
-        self.ep_drawdowns =[]
-
+        self.ep_cum_pvs = []
+        self.ep_drawdowns = []
 
     def _build_recorders_play(self, avg_length=None):
         self.ep_rewards = []

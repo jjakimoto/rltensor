@@ -14,6 +14,10 @@ class Dirichlet(FeedForward):
             scope_name = "dirichlet"
         model_params.append({"name": "dense",
                              "num_units": action_dim})
+        if isinstance(action_dim, int):
+            self.shape = (action_dim,)
+        else:
+            self.shape = tuple(action_dim)
         super().__init__(model_params, scope_name)
         self.max_value = max_value
         self.min_value = min_value

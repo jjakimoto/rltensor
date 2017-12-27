@@ -69,7 +69,7 @@ class RunnerMixin(object):
                         if terminal:
                             self._reset(_env)
                         self.observe(observation, action,
-                                     reward, terminal,
+                                     reward, terminal, info,
                                      training=False, is_store=False)
                 # Update step
                 self.update_step()
@@ -80,14 +80,15 @@ class RunnerMixin(object):
                 # 2. act
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=True)
+                self._update_status(observation, reward, terminal, info)
                 # 3. store data and train network
                 if step < self.t_learn_start:
                     response = self.observe(observation, action, reward,
-                                            terminal, training=False,
+                                            terminal, info, training=False,
                                             is_store=True)
                 else:
                     response = self.observe(observation, action, reward,
-                                            terminal, training=True,
+                                            terminal, info, training=True,
                                             is_store=True)
                     self._record(observation, reward, terminal, info,
                                  action, response, log_freq)
@@ -131,7 +132,7 @@ class RunnerMixin(object):
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=False)
                 self.observe(observation, action, reward, terminal,
-                             training=False, is_store=False)
+                             info, training=False, is_store=False)
                 if render_freq is not None:
                     if step % render_freq == 0:
                         _env.render()
@@ -170,7 +171,8 @@ class RunnerMixin(object):
         self.memory.reset()
         observation = env.reset()
         self.observe(observation, None, 0, False,
-                     training=False, is_store=False)
+                     None, training=False, is_store=False)
+        return observation
 
     def _record(self, observation, reward, terminal, info,
                 action, response, log_freq):
@@ -276,3 +278,6 @@ class RunnerMixin(object):
         self.max_ep_rewards = []
         self.min_ep_rewards = []
         self.avg_ep_rewards = []
+
+    def _update_status(self, observation, reward, terminal, info):
+        pass

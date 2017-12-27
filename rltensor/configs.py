@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from rltensor.processors import AtariProcessor
-from rltensor.networks import Categorical
+from rltensor.networks import Categorical, Dirichlet
 
 
 scale = 10000
@@ -44,6 +44,33 @@ def dqn_config():
     )
     _dqn_config.update(agent_config())
     return _dqn_config
+
+
+T = 100000
+
+
+def eiie_config():
+    _eiie_config = dict(
+        actor_cls = Dirichlet,
+        actor_spec=[
+                {"name": "conv2d", "kernel_size":(8, 1), "num_filters":32, "stride":4,
+                 "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
+             {"name": "conv2d", "kernel_size":(4, 1), "num_filters":64, "stride":2,
+             "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
+             {"name": "conv2d", "kernel_size": (3, 1), "num_filters":64, "stride":1,
+             "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
+                {"name": "dense", "is_flatten":True, "is_batch":False, "num_units": 100, 'activation': tf.nn.relu},
+        ],
+        explore_spec={"t_ep_end": 100 * scale, "ep_start": 1.0, "ep_end": 0.1},
+        memory_limit=T,
+        window_length=30,
+        batch_size=32,
+        init_pv=100,
+    )
+    _eiie_config.update(agent_config())
+    _eiie_config["t_learn_start"] = 32
+    _eiie_config["t_update_freq"] = 1
+    return _eiie_config
 
 
 def fit_config():

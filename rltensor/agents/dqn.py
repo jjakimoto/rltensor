@@ -60,12 +60,16 @@ class DQN(Agent):
         # state shape has to be (batch, length,) + input_dim
         self.state_ph = tf.placeholder(
             tf.float32,
-            get_shape(self.state_shape, maxlen=self.window_length),
+            get_shape(self.state_shape,
+                      is_sequence=True,
+                      maxlen=self.window_length),
             name='state_ph')
         _state_ph = self.processor.tensor_process(self.state_ph)
         self.target_state_ph = tf.placeholder(
             tf.float32,
-            get_shape(self.state_shape, maxlen=self.window_length),
+            get_shape(self.state_shape,
+                      is_sequence=True,
+                      maxlen=self.window_length),
             name='target_state_ph')
         _target_state_ph = self.processor.tensor_process(self.target_state_ph)
         # Build critic network
@@ -123,9 +127,9 @@ class DQN(Agent):
         self.epsilon_tf = self._get_epsilon()
 
     def _observe(self, observation, action, reward,
-                 terminal, training, is_store):
+                 terminal, info, training, is_store):
         self.memory.append(observation, action, reward,
-                           terminal, is_store=is_store)
+                           terminal, info, is_store=is_store)
 
         step = self.global_step
 

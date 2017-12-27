@@ -31,7 +31,7 @@ def resize_data(data, width, height, c_dim=3, is_color=True):
     return converted_data
 
 
-def get_shape(input_shape, batch_size=None, maxlen=None):
+def get_shape(input_shape, is_batch=True, is_sequence=False, maxlen=None):
     """Get shape of batch input for model
 
     Args:
@@ -46,7 +46,8 @@ def get_shape(input_shape, batch_size=None, maxlen=None):
         input_shape = (input_shape,)
     elif isinstance(input_shape, list):
         input_shape = tuple(input_shape)
-    if maxlen:
+    if is_sequence:
         input_shape = (maxlen,) + input_shape
-    input_shape = (batch_size,) + input_shape
+    if is_batch:
+        input_shape = (None,) + input_shape
     return input_shape
