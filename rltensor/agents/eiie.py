@@ -76,7 +76,7 @@ class EIIE(TradeRunnerMixin, Agent):
                                         name="reward_ph")
         actor_returns = tf.reduce_sum(self.actor_action * self.reward_ph,
                                       axis=-1)
-        self.actor_value = tf.reduce_mean(tf.log(actor_returns))
+        self.actor_value = tf.reduce_mean(tf.log(actor_returns + 1.))
         self.actor_loss = -self.actor_value
 
         # Build optimizer
@@ -93,7 +93,6 @@ class EIIE(TradeRunnerMixin, Agent):
                  terminal, info, training, is_store):
         self.memory.append(observation, action, reward,
                            terminal, info, is_store=is_store)
-
         step = self.global_step
 
         if training:

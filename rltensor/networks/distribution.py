@@ -13,7 +13,8 @@ class Dirichlet(FeedForward):
         if scope_name is None:
             scope_name = "dirichlet"
         model_params.append({"name": "dense",
-                             "num_units": action_dim})
+                             "num_units": action_dim,
+                             "activation": tf.nn.softmax})
         if isinstance(action_dim, int):
             self.shape = (action_dim,)
         else:
@@ -22,26 +23,8 @@ class Dirichlet(FeedForward):
         self.max_value = max_value
         self.min_value = min_value
 
-    def __call__(self, x, training=None):
-        alphas, _, log_norm = self.get_params(x, training)
-        alphas_sum = utils.sum_keep_shape(alphas, axis=-1)
-        return alphas / alphas_sum
-
-    def get_params(self, x, training):
-        logits = super().__call__(x, training)
-        alphas = tf.log(x=(tf.exp(x=logits) + 1.0)) + 1.0
-
-        shape = (-1,) + self.shape
-        alphas = tf.reshape(tensor=alphas, shape=shape)
-        alphas_sum = tf.reduce_sum(alphas, axis=-1)
-        alphas_sum = tf.maximum(x=alphas_sum, y=utils.epsilon)
-
-        log_norm = tf.reduce_sum(tf.lgamma(alphas), axis=-1)\
-            - tf.lgamma(alphas_sum)
-        return alphas, alphas_sum, log_norm
-
     def sample(self, x, training=None):
-        alphas, _, _ = self.get_params(x, training)
+        alphas = self.__call__(x, training)
         alphas_sample = tf.random_gamma(shape=(), alpha=alphas)
         alphas_sample_sum = utils.sum_keep_shape(alphas_sample, axis=-1)
         alphas_sample_sum = tf.maximum(x=alphas_sample_sum, y=utils.epsilon)

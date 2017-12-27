@@ -2,7 +2,7 @@ from copy import deepcopy
 import pandas as pd
 import numpy as np
 
-from .utils import convert_time
+# from .utils import convert_time
 from .core import Env
 
 
@@ -10,14 +10,14 @@ class TradeEnv(Env):
     """Environment only for close prices"""
 
     def __init__(self, data, start=None, end=None,
-                 add_cash=True, keys=["Close", "Open", "High"]):
+                 add_cash=True, keys=["close", "open", "high"]):
         self.keys = keys
         time_index = set()
         impute_data = {}
         data = deepcopy(data)
         for key, val in data.items():
-            dates = val["Date"].values
-            dates = [convert_time(d) for d in dates]
+            dates = val["date"].values
+            # dates = [convert_time(d) for d in dates]
             impute_data[key] = dict(time_range=(dates[-1], dates[0]),
                                     impute_val=(val.iloc[-1], val.iloc[0]))
             data[key].index = dates
@@ -25,11 +25,11 @@ class TradeEnv(Env):
         self.time_index = sorted(list(time_index))
         if add_cash:
             val = np.ones(len(self.time_index))
-            cash_df = pd.DataFrame({"Open": val,
-                                    "High": val,
-                                    "Low": val,
-                                    "Close": val,
-                                    "Volume": val},
+            cash_df = pd.DataFrame({"open": val,
+                                    "high": val,
+                                    "low": val,
+                                    "close": val,
+                                    "volume": val},
                                    index=self.time_index)
             key = "Cash"
             data[key] = cash_df
@@ -53,6 +53,7 @@ class TradeEnv(Env):
         self.current_step = 0
         # Use for calculate return
         self.prev_bars = self._get_bar()
+        self.max_time = max(self.time_index)
 
     def _reset(self):
         self.current_time = self.start
@@ -65,18 +66,17 @@ class TradeEnv(Env):
         current_bars = self._get_bar()
         returns = []
         for symbol in self.symbols:
-            returns.append(current_bars[symbol]["Close"] / self.prev_bars[symbol]["Close"] - 1)
+            returns.append(current_bars[symbol]["close"] / self.prev_bars[symbol]["close"] - 1)
         returns = np.array(returns)
         # Update bars
         self.prev_bars = deepcopy(current_bars)
         self._update_time()
         observation = self._get_observation(current_bars)
-        terminal = False
-        # Log return
+        terminal = self._get_terminal()
         reward = np.sum(returns * action)
         info = {}
         info["returns"] = returns
-        return observation, terminal, reward, info
+        return observation, reward, terminal, info
 
     def _get_observation(self, bars):
         observation = []
@@ -88,6 +88,9 @@ class TradeEnv(Env):
         index = self.time_index.index(self.current_time)
         self.current_time = self.time_index[index + 1]
         self.current_step += 1
+
+    def _get_terminal(self):
+        return self.current_time >= self.max_time
 
     def _get_bar(self):
         bar = {}
