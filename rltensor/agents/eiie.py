@@ -15,7 +15,7 @@ class EIIE(TradeRunnerMixin, Agent):
                  actor_spec=None,
                  optimizer_spec=None, lr_spec=None,
                  actor_cls=Dirichlet, explore_spec=None,
-                 memory_limit=10000, window_length=4, beta=0.1,
+                 memory_limit=10000, window_length=4, beta=5.0e-5,
                  is_prioritized=True, batch_size=32, error_clip=1.0,
                  t_learn_start=100, t_update_freq=1,
                  min_r=None, max_r=None, sess=None,
@@ -104,6 +104,11 @@ class EIIE(TradeRunnerMixin, Agent):
             result = self.learning_minibatch(experiences, is_update)
         else:
             result = None
+        return result
+
+    def nonobserve_learning(self):
+        experiences = self.memory.sample(self.batch_size)
+        result = self.learning_minibatch(experiences, is_update=True)
         return result
 
     def learning_minibatch(self, experiences, is_update=True):

@@ -1,6 +1,7 @@
 import time
 import numpy as np
 from collections import deque
+from tqdm import tqdm
 
 from .runner import RunnerMixin
 
@@ -45,75 +46,40 @@ class TradeRunnerMixin(RunnerMixin):
                 histogram_summary_tags.append("test.action_{}".format(i))
         self.histogram_summary_tags = histogram_summary_tags
 
-    def fit(self, t_max, num_max_start_steps=0,
+    def fit(self, start=None, end=None, num_epochs=100,
             save_file_path=None,
             overwrite=True,
-            render_freq=None,
             log_freq=1000,
             avg_length=1000):
         # Save Model
         self.save_params(save_file_path, overwrite)
         # Record Viodeo
         _env = self.env
+        _env.set_trange(start, end)
         self._reset(_env)
         # initialize target netwoork
         self.init_update()
         # accumulate results
         self._build_recorders(avg_length)
-        step = self.global_step
-        # Determine if it has to be randomly initialized
-        self.init_flag = True
-        # Start from the middle of training
-        t_max = t_max - step
         self.st = time.time()
         self.record_st = self.st
         try:
-            for t in tqdm(xrange(t_max)):
-                if self.init_flag:
-                    self.init_flag = False
-                    if num_max_start_steps == 0:
-                        num_random_start_steps = 0
-                    else:
-                        num_random_start_steps =\
-                            np.random.randint(num_max_start_steps)
-                    for _ in xrange(num_random_start_steps):
-                        action = _env.action_space.sample()
-                        observation, reward, terminal, info =\
-                            _env.step(action, is_training=True)
-                        if terminal:
-                            self._reset(_env)
-                        self.observe(observation, action,
-                                     reward, terminal, info,
-                                     training=False, is_store=False)
-                # Update step
-                self.update_step()
-                step = self.global_step
-                # 1. predict
-                state = self.get_recent_state()
-                action = self.predict(state)
-                # 2. act
+            terminal = False
+            while not terminal:
+                action = self.actor.sample(1)[0]
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=True)
-                self._update_status(observation, reward, terminal, info)
-                # 3. store data and train network
-                if step < self.t_learn_start:
-                    response = self.observe(observation, action, reward,
-                                            terminal, info, training=False,
-                                            is_store=True)
-                else:
-                    response = self.observe(observation, action, reward,
-                                            terminal, info, training=True,
-                                            is_store=True)
-                    self._record(observation, reward, terminal, info,
-                                 action, response, log_freq)
-                # Visualize reuslts
-                if render_freq is not None:
-                    if step % render_freq == 0:
-                        _env.render()
-                # Reset environment
-                if terminal:
-                    self._reset(_env)
-                    self.update_episode()
+                self.observe(observation, action,
+                             reward, terminal, info,
+                             training=False, is_store=True)
+            print("Finished storing data.")
+            # Start training
+            for epoch in tqdm(range(num_epochs)):
+                # Update step
+                self.update_step()
+                # Update parameters
+                response = self.nonobserve_learning()
+                self._record(response, log_freq)
         except KeyboardInterrupt:
             pass
         # Update parameters before finishing
@@ -133,7 +99,24 @@ class TradeRunnerMixin(RunnerMixin):
         self.peak_pv = self.init_pv
         return super()._reset(env)
 
-    def _record(self, observation, reward, terminal, info,
+    def _record(self, response, log_freq):
+        loss, is_update = response
+        step = self.global_step
+        # Update statistics
+        self.total_losses.append(loss)
+        # Write summary
+        if log_freq is not None and step % log_freq == 0:
+            num_per_sec = log_freq / (time.time() - self.record_st)
+            self.record_st = time.time()
+            learning_rate = self.learning_rate
+            avg_loss = np.mean(self.total_losses)
+            tag_dict = {'training.average_loss': avg_loss,
+                        'training.learning_rate': learning_rate,
+                        'training.num_step_per_sec': num_per_sec,
+                        'training.time': time.time() - self.st}
+            self._inject_summary(tag_dict, step)
+
+    def _legacy_record(self, observation, reward, terminal, info,
                 action, response, log_freq):
         loss, is_update = response
         step = self.global_step
@@ -218,6 +201,9 @@ class TradeRunnerMixin(RunnerMixin):
             self._inject_summary(tag_dict, self.num_ep)
 
     def _build_recorders(self, avg_length):
+        self.total_losses = deque(maxlen=avg_length)
+
+    def _legacy_build_recorders(self, avg_length):
         self.total_returns = deque(maxlen=avg_length)
         self.total_losses = deque(maxlen=avg_length)
         self.ep_returns = []

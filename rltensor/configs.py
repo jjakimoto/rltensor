@@ -20,6 +20,7 @@ def agent_config():
 
 
 def dqn_config():
+    conf = agent_config()
     _dqn_config = dict(
         ciritc_cls=Categorical,
         critic_spec=[
@@ -42,36 +43,41 @@ def dqn_config():
         t_target_q_update_freq=1 * scale,
         double_q=True,
     )
-    _dqn_config.update(agent_config())
-    return _dqn_config
+    conf.update(_dqn_config)
+    return conf
 
 
 T = 100000
 
 
 def eiie_config():
+    conf = agent_config()
     _eiie_config = dict(
         actor_cls=Dirichlet,
         actor_spec=[{"name": "conv2d", "kernel_size": (3, 1),
                      "num_filters": 2, "stride": 1, "padding": 'VALID',
-                     "is_batch": False, 'activation': tf.nn.relu},
+                     "is_batch": False, 'activation': tf.nn.relu,
+                     "w_reg": ["l2", 1e-8]},
                     {"name": "conv2d", "kernel_size": (48, 1),
                      "num_filters": 20, "stride": 1, "padding": 'VALID',
-                     "is_batch": False, 'activation': tf.nn.relu},
+                     "is_batch": False, 'activation': tf.nn.relu,
+                     "w_reg": ["l2", 1e-8]},
                     {"name": "transpose", "axis": [0, 3, 2, 1]},
                     {"name": "conv2d", "kernel_size": (1, 1),
                      "num_filters": 1, "stride": 1, "padding": 'VALID',
-                     "is_batch": False, 'activation': tf.nn.relu},
+                     "is_batch": False, 'activation': tf.nn.relu,
+                     "w_reg": ["l2", 1e-8]},
                     {"name": None, "is_flatten": True}],
         memory_limit=T,
         window_length=50,
-        batch_size=32,
+        batch_size=50,
         init_pv=100,
+        beta=5.0e-5,
+        lr_spec={"lr_init": 3.0e-5, "lr_decay_step": 5 * scale,
+                 "lr_decay": 0.96, "lr_min": 3.0e-5},
     )
-    _eiie_config.update(agent_config())
-    _eiie_config["t_learn_start"] = 32
-    _eiie_config["t_update_freq"] = 1
-    return _eiie_config
+    conf.update(_eiie_config)
+    return conf
 
 
 def fit_config():

@@ -2,8 +2,7 @@ from copy import deepcopy
 import pandas as pd
 import numpy as np
 
-# from .utils import convert_time
-from .core import Env
+from rltensor.environments.core import Env
 
 
 class TradeEnv(Env):
@@ -18,8 +17,8 @@ class TradeEnv(Env):
         for key, val in data.items():
             dates = val["date"].values
             # dates = [convert_time(d) for d in dates]
-            impute_data[key] = dict(time_range=(dates[-1], dates[0]),
-                                    impute_val=(val.iloc[-1], val.iloc[0]))
+            impute_data[key] = dict(time_range=(dates[0], dates[-1]),
+                                    impute_val=(val.iloc[0], val.iloc[-1]))
             data[key].index = dates
             time_index = time_index.union(set(dates))
         self.time_index = sorted(list(time_index))
@@ -33,11 +32,21 @@ class TradeEnv(Env):
                                    index=self.time_index)
             key = "Cash"
             data[key] = cash_df
-            impute_data[key] = dict(time_range=(self.time_index[-1],
-                                                self.time_index[0]),
-                                    impute_val=(cash_df.iloc[-1],
-                                                cash_df.iloc[0]))
+            impute_data[key] = dict(time_range=(self.time_index[0],
+                                                self.time_index[-1]),
+                                    impute_val=(cash_df.iloc[0],
+                                                cash_df.iloc[-1]))
         self.impute_data = impute_data
+        self.set_trange(start, end)
+        self.data = data
+        self.symbols = list(data.keys())
+        self.num_stocks = len(self.symbols)
+        self.current_time = self.start
+        self.current_step = 0
+        # Use for calculate return
+        self.prev_bars = self._get_bar()
+
+    def set_trange(self, start=None, end=None):
         if start is None:
             self.start = self.time_index[0]
         else:
@@ -46,14 +55,6 @@ class TradeEnv(Env):
             self.end = self.time_index[-1]
         else:
             self.end = max(end, self.time_index[-1])
-        self.data = data
-        self.symbols = list(data.keys())
-        self.num_stocks = len(self.symbols)
-        self.current_time = self.start
-        self.current_step = 0
-        # Use for calculate return
-        self.prev_bars = self._get_bar()
-        self.max_time = max(self.time_index)
 
     def _reset(self):
         self.current_time = self.start
@@ -76,6 +77,7 @@ class TradeEnv(Env):
         reward = np.sum(returns * action)
         info = {}
         info["returns"] = returns
+        # print("reward action", reward, action)
         return observation, reward, terminal, info
 
     def _get_observation(self, bars):
@@ -90,13 +92,14 @@ class TradeEnv(Env):
         self.current_step += 1
 
     def _get_terminal(self):
-        return self.current_time >= self.max_time
+        return self.current_time >= self.end
 
     def _get_bar(self):
         bar = {}
         for symbol in self.symbols:
             min_t = self.impute_data[symbol]["time_range"][0]
             max_t = self.impute_data[symbol]["time_range"][1]
+            # print("current_time", self.current_time, "min_t", min_t, "max_t", max_t)
             if (min_t <= self.current_time) and (max_t >= self.current_time):
                 if self.current_time in self.data[symbol].index:
                     bar[symbol] = self.data[symbol].loc[self.current_time]
@@ -113,3 +116,4 @@ class TradeEnv(Env):
     @property
     def action_dim(self):
         return self.num_stocks
+
