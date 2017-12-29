@@ -64,6 +64,8 @@ class FeedForward(BaseNetwork):
                                              **options)
                     elif params["name"] == "reshape":
                         x = tf.reshape(x, (-1,) + params["reshape_size"])
+                    elif params["name"] == "transpose":
+                        x = tf.transpose(x, params["axis"])
                     elif params["name"] == "pooling":
                         del params["name"]
                         x = tf.nn.pool(x, **params)

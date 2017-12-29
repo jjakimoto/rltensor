@@ -51,19 +51,20 @@ T = 100000
 
 def eiie_config():
     _eiie_config = dict(
-        actor_cls = Dirichlet,
-        actor_spec=[
-                {"name": "conv2d", "kernel_size":(8, 1), "num_filters":32, "stride":4,
-                 "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
-             {"name": "conv2d", "kernel_size":(4, 1), "num_filters":64, "stride":2,
-             "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
-             {"name": "conv2d", "kernel_size": (3, 1), "num_filters":64, "stride":1,
-             "padding": 'SAME', "is_batch":False, 'activation': tf.nn.relu},
-                {"name": "dense", "is_flatten":True, "is_batch":False, "num_units": 100, 'activation': tf.nn.relu},
-        ],
-        explore_spec={"t_ep_end": 100 * scale, "ep_start": 1.0, "ep_end": 0.1},
+        actor_cls=Dirichlet,
+        actor_spec=[{"name": "conv2d", "kernel_size": (3, 1),
+                     "num_filters": 2, "stride": 1, "padding": 'VALID',
+                     "is_batch": False, 'activation': tf.nn.relu},
+                    {"name": "conv2d", "kernel_size": (48, 1),
+                     "num_filters": 20, "stride": 1, "padding": 'VALID',
+                     "is_batch": False, 'activation': tf.nn.relu},
+                    {"name": "transpose", "axis": [0, 3, 2, 1]},
+                    {"name": "conv2d", "kernel_size": (1, 1),
+                     "num_filters": 1, "stride": 1, "padding": 'VALID',
+                     "is_batch": False, 'activation': tf.nn.relu},
+                    {"name": None, "is_flatten": True}],
         memory_limit=T,
-        window_length=30,
+        window_length=50,
         batch_size=32,
         init_pv=100,
     )

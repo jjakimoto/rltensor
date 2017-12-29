@@ -45,6 +45,80 @@ class TradeRunnerMixin(RunnerMixin):
                 histogram_summary_tags.append("test.action_{}".format(i))
         self.histogram_summary_tags = histogram_summary_tags
 
+    def fit(self, t_max, num_max_start_steps=0,
+            save_file_path=None,
+            overwrite=True,
+            render_freq=None,
+            log_freq=1000,
+            avg_length=1000):
+        # Save Model
+        self.save_params(save_file_path, overwrite)
+        # Record Viodeo
+        _env = self.env
+        self._reset(_env)
+        # initialize target netwoork
+        self.init_update()
+        # accumulate results
+        self._build_recorders(avg_length)
+        step = self.global_step
+        # Determine if it has to be randomly initialized
+        self.init_flag = True
+        # Start from the middle of training
+        t_max = t_max - step
+        self.st = time.time()
+        self.record_st = self.st
+        try:
+            for t in tqdm(xrange(t_max)):
+                if self.init_flag:
+                    self.init_flag = False
+                    if num_max_start_steps == 0:
+                        num_random_start_steps = 0
+                    else:
+                        num_random_start_steps =\
+                            np.random.randint(num_max_start_steps)
+                    for _ in xrange(num_random_start_steps):
+                        action = _env.action_space.sample()
+                        observation, reward, terminal, info =\
+                            _env.step(action, is_training=True)
+                        if terminal:
+                            self._reset(_env)
+                        self.observe(observation, action,
+                                     reward, terminal, info,
+                                     training=False, is_store=False)
+                # Update step
+                self.update_step()
+                step = self.global_step
+                # 1. predict
+                state = self.get_recent_state()
+                action = self.predict(state)
+                # 2. act
+                observation, reward, terminal, info =\
+                    _env.step(action, is_training=True)
+                self._update_status(observation, reward, terminal, info)
+                # 3. store data and train network
+                if step < self.t_learn_start:
+                    response = self.observe(observation, action, reward,
+                                            terminal, info, training=False,
+                                            is_store=True)
+                else:
+                    response = self.observe(observation, action, reward,
+                                            terminal, info, training=True,
+                                            is_store=True)
+                    self._record(observation, reward, terminal, info,
+                                 action, response, log_freq)
+                # Visualize reuslts
+                if render_freq is not None:
+                    if step % render_freq == 0:
+                        _env.render()
+                # Reset environment
+                if terminal:
+                    self._reset(_env)
+                    self.update_episode()
+        except KeyboardInterrupt:
+            pass
+        # Update parameters before finishing
+        self.save_params(save_file_path, True)
+
     def _update_status(self, observation, reward, terminal, info):
         # Calculate portfolio value
         self.cum_pv *= (1. + reward)

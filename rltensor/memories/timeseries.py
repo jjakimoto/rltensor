@@ -29,7 +29,7 @@ class TSMemory(BaseMemory):
         assert num_options > 0
         idx = np.random.geometric(self.beta) % num_options
         init_idx = self.start_idx - idx
-        batch_idxs = np.arange(init_idx - batch_size + 1, init_idx + 1)
+        batch_idxs = np.arange(init_idx - batch_size + 1, init_idx + 1) % self.limit
         # Create experiences
         experiences = []
         # Each idx is index for state1
