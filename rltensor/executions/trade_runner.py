@@ -77,12 +77,6 @@ class TradeRunnerMixin(RunnerMixin):
                 self.observe(observation, action,
                              reward, terminal, info,
                              training=False, is_store=True)
-                if step % 100 == 0:
-                    print(step)
-                    print(time.time() - self.st)
-                    print(cum_time)
-                    cum_time = 0
-                    self.st = time.time()
             print("Finished storing data.")
             # Start training
             for epoch in tqdm(xrange(num_epochs)):
