@@ -70,12 +70,12 @@ class TradeEnv(Env):
         self.current_step = list(self.time_index).index(self.start)
         self.prev_bars = self._get_bar()
         # observation = self._get_observation(self.prev_bars)
-        observation = 0
+        observation = self.prev_bars
         return observation
 
     def _step(self, action, is_training=True, *args, **kwargs):
         current_bars = self._get_bar()
-        returns = current_bars[:, 0] / self.prev_bars[:, 0]
+        returns = current_bars[:, 0] / self.prev_bars[:, 0] - 1.
         # Update bars
         self.prev_bars = deepcopy(current_bars)
         self._update_time()

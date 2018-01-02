@@ -167,11 +167,12 @@ class RunnerMixin(object):
         for summary_str in summary_str_lists:
             self.writer.add_summary(summary_str, step)
 
-    def _reset(self, env):
-        self.memory.reset()
+    def _reset(self, env, is_reset_memory=True):
         observation = env.reset()
-        self.observe(observation, None, 0, False,
-                     None, training=False, is_store=False)
+        if is_reset_memory:
+            self.memory.reset()
+            self.observe(observation, None, 0, False,
+                         None, training=False, is_store=False)
         return observation
 
     def _record(self, observation, reward, terminal, info,

@@ -1,6 +1,7 @@
 import time
 import numpy as np
 from collections import deque
+from copy import deepcopy
 from tqdm import tqdm
 from six.moves import xrange
 
@@ -56,7 +57,7 @@ class TradeRunnerMixin(RunnerMixin):
         # Record Viodeo
         _env = self.env
         _env.set_trange(start, end)
-        self._reset(_env)
+        self._reset(_env, is_reset_memory=True)
         # initialize target netwoork
         self.init_update()
         # accumulate results
@@ -77,6 +78,9 @@ class TradeRunnerMixin(RunnerMixin):
                 self.observe(observation, action,
                              reward, terminal, info,
                              training=False, is_store=True)
+            self.fit_recent_observations =\
+                deepcopy(self.memory.recent_observations)
+            self.fit_recent_terminals = deepcopy(self.memory.recent_terminals)
             print("Finished storing data.")
             # Start training
             for epoch in tqdm(xrange(num_epochs)):
@@ -101,6 +105,8 @@ class TradeRunnerMixin(RunnerMixin):
         _env = self.env
         _env.set_trange(start, end)
         observation = self._reset(_env)
+        self.memory.set_recent_data(self.fit_recent_observations,
+                                    self.fit_recent_terminals)
         self._build_recorders_play(avg_length)
         # Start from the middle of training
         self.st = time.time()
@@ -139,11 +145,11 @@ class TradeRunnerMixin(RunnerMixin):
             self.peak_pv = self.cum_pv
         self.drawdown = (self.peak_pv - self.cum_pv) / self.peak_pv
 
-    def _reset(self, env):
+    def _reset(self, env, is_reset_memory=False):
         self.drawdown = 0
         self.cum_pv = self.init_pv
         self.peak_pv = self.init_pv
-        return super()._reset(env)
+        return super()._reset(env, is_reset_memory=is_reset_memory)
 
     def _record(self, response, log_freq):
         loss, is_update = response

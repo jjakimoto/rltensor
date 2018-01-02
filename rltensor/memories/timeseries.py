@@ -11,7 +11,8 @@ TSExperience = namedtuple('TSExperience',
 
 class TSMemory(BaseMemory):
     def __init__(self, limit, window_length, beta=0.1, *args, **kwargs):
-        super(TSMemory, self).__init__(window_length=window_length)
+        super(TSMemory, self).__init__(window_length=window_length,
+                                       ignore_episode_boundaries=True)
         self.limit = limit
         # Do not use deque to implement the memory. This data structure
         # may seem convenient but

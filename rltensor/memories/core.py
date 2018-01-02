@@ -1,4 +1,5 @@
 from collections import namedtuple, deque
+from copy import deepcopy
 import numpy as np
 
 
@@ -89,3 +90,7 @@ class BaseMemory(object):
     def reset(self):
         self.recent_observations = deque(maxlen=self.window_length)
         self.recent_terminals = deque(maxlen=self.window_length)
+
+    def set_recent_data(self, observations, terminals):
+        self.recent_observations = deepcopy(observations)
+        self.recent_terminals = deepcopy(terminals)
