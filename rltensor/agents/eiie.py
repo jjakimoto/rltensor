@@ -68,7 +68,14 @@ class EIIE(TradeRunnerMixin, Agent):
         self.actor = self.actor_cls(self.actor_spec,
                                     self.action_shape,
                                     scope_name="actor")
-        self.actor_action = self.actor(_state_ph, self.training_ph)
+        self.prev_action_ph = tf.placeholder(tf.float32,
+                                             get_shape(self.action_shape,
+                                                       is_sequence=False),
+                                             name='prev_action_ph')
+        _prev_action_ph = tf.expand_dims(self.prev_action_ph, axis=-1)
+        _state_ph = self.processor.ten
+        self.actor_action = self.actor(_state_ph, self.training_ph,
+                                       addtional_x=_prev_action_ph)
         # Build critic objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32,
@@ -117,16 +124,22 @@ class EIIE(TradeRunnerMixin, Agent):
             self.reward_ph: [experience.reward for experience in experiences],
             self.terminal_ph: [experience.terminal
                                for experience in experiences],
+            self.prev_action_ph: [experience.action
+                                  for experience in experiences],
             self.training_ph: True,
         }
         if is_update:
             self.sess.run(self.actor_optim, feed_dict=feed_dict)
+            actions = self.sess.run(self.actor_action, feed_dict=feed_dict)
+            indices = [experience.index for experience in experiences]
+            self._update_pvm(actions, indices)
         actor_loss = self.sess.run(self.actor_loss, feed_dict=feed_dict)
         return actor_loss, is_update
 
-    def predict(self, state, *args, **kwargs):
+    def predict(self, state, prev_action, *args, **kwargs):
         action = self.sess.run(self.policy_action,
                                feed_dict={self.state_ph: [state],
+                                          self.
                                           self.training_ph: False})[0]
         return action
 
@@ -135,11 +148,18 @@ class EIIE(TradeRunnerMixin, Agent):
                         window_length=window_length,
                         beta=beta)
 
+    def _update_pvm(self, actions, indices):
+        for action, idx in zip(actions, indices):
+            self.memory.actions[idx] = action
+
     def init_update(self):
         pass
 
     def get_recent_state(self):
         return self.memory.get_recent_state()
+
+    def get_recent_actions(self):
+        return self.memory.get_recent_actions()
 
     def reset(self):
         self.memory.reset()

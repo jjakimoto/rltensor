@@ -116,7 +116,8 @@ class TradeRunnerMixin(RunnerMixin):
             while not terminal:
                 # 1. predict
                 state = self.get_recent_state()
-                action = self.predict(state)
+                recent_actions = self.get_recent_actions()
+                action = self.predict(state, recent_actions)
                 # 2. act
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=False)
