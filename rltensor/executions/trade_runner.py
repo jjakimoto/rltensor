@@ -26,6 +26,7 @@ class TradeRunnerMixin(RunnerMixin):
                 'training.time',
                 'test.average_loss',
                 'test.average_returns',
+                'test.average_cost',
                 'test.learning_rate',
                 'test.num_step_per_sec',
                 'test.time',
@@ -37,14 +38,15 @@ class TradeRunnerMixin(RunnerMixin):
                 'test.final_value',
                 'test.maximum_drawdown',
                 'test.sharp_ratio',
+                'test.average_cost',
+                'test.cumulative_cost',
             ]
         self.scalar_summary_tags = scalar_summary_tags
 
         if histogram_summary_tags is None:
             histogram_summary_tags = ['test.returns']
-            for i in range(self.env.action_dim):
-                histogram_summary_tags.append("episode.action_{}".format(i))
-                histogram_summary_tags.append("test.action_{}".format(i))
+            for i in range(self.action_shape):
+                histogram_summary_tags.append('test.action_%d' % i)
         self.histogram_summary_tags = histogram_summary_tags
 
     def fit(self, start=None, end=None, num_epochs=100,
@@ -64,23 +66,21 @@ class TradeRunnerMixin(RunnerMixin):
         self._build_recorders(avg_length)
         self.st = time.time()
         self.record_st = self.st
+        pbar = tqdm()
         try:
             terminal = False
-            step = 0
-            cum_time = 0
             while not terminal:
-                step += 1
+                pbar.update(1)
                 action = self.actor.sample(1)[0]
-                _st = time.time()
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=True)
-                cum_time += time.time() - _st
                 self.observe(observation, action,
                              reward, terminal, info,
                              training=False, is_store=True)
             self.fit_recent_observations =\
                 deepcopy(self.memory.recent_observations)
             self.fit_recent_terminals = deepcopy(self.memory.recent_terminals)
+            pbar.close()
             print("Finished storing data.")
             # Start training
             for epoch in tqdm(xrange(num_epochs)):
@@ -112,8 +112,10 @@ class TradeRunnerMixin(RunnerMixin):
         self.st = time.time()
         self.record_st = self.st
         terminal = False
+        pbar = tqdm()
         try:
             while not terminal:
+                pbar.update(1)
                 # 1. predict
                 state = self.get_recent_state()
                 recent_actions = self.get_recent_actions()
@@ -135,6 +137,7 @@ class TradeRunnerMixin(RunnerMixin):
                                   action, response, log_freq)
         except KeyboardInterrupt:
             pass
+        pbar.close()
         # Update parameters before finishing
         self.save_params(save_file_path, True)
 
@@ -181,8 +184,13 @@ class TradeRunnerMixin(RunnerMixin):
         loss, is_update = response
         step = self.global_step
         # Update statistics
+        self.test_avg_returns.append(reward)
+        self.test_avg_losses.append(loss)
+        self.test_avg_costs.append(info['cost'])
         self.test_returns.append(reward)
         self.test_losses.append(loss)
+        self.test_costs.append(info['cost'])
+        self.test_actions.append(action)
         self.test_drawdowns.append(self.drawdown)
         self.test_cumulative_returns.append(self.cum_pv)
         # Write summary
@@ -190,15 +198,29 @@ class TradeRunnerMixin(RunnerMixin):
             num_per_sec = log_freq / (time.time() - self.record_st)
             self.record_st = time.time()
             learning_rate = self.learning_rate
-            avg_r = np.mean(self.test_returns)
-            avg_loss = np.mean(self.test_losses)
+            avg_r = np.mean(self.test_avg_returns)
+            avg_loss = np.mean(self.test_avg_losses)
+            avg_cost = np.mean(self.test_avg_costs)
+            cum_cost = np.sum(self.test_costs)
             tag_dict = {'test.average_returns': avg_r,
                         'test.average_loss': avg_loss,
+                        'test.average_cost': avg_cost,
                         'test.drawdown': self.drawdown,
                         'test.cumulative_returns': self.cum_pv,
+                        'test.cumulative_cost': cum_cost,
                         'test.learning_rate': learning_rate,
                         'test.num_step_per_sec': num_per_sec,
                         'test.time': time.time() - self.st}
+            # Record statistics with certain frequency
+            if step % (log_freq * 100) == 0:
+                sharp_ratio = calc_sharp_ratio(self.test_avg_returns)
+                tag_dict['test.sharp_ratio'] = sharp_ratio
+                for i in range(self.action_shape):
+                    name = 'test.action_%d' % i
+                    tag_dict[name] = np.array(self.test_actions)[:, i]
+                self.test_actions = []
+                tag_dict['test.returns'] = self.test_avg_returns
+
             self._inject_summary(tag_dict, step)
         if log_freq is not None:
             if terminal:
@@ -207,24 +229,21 @@ class TradeRunnerMixin(RunnerMixin):
                     min_returns = np.min(self.test_returns)
                     avg_returns = np.mean(self.test_returns)
                     max_drawdown = np.max(self.test_drawdowns)
-                    sharp_ratio = calc_sharp_ratio(self.test_returns)
+                    final_sharp_ratio = calc_sharp_ratio(self.test_returns)
                 except:
                     max_returns = 0.
                     min_returns = 0.
                     avg_returns = 0.
                     max_drawdown = 0.
-                    sharp_ratio = 0.
-
+                    final_sharp_ratio = 0.
                 tag_dict = {'test.maximum_drawdown': max_drawdown,
                             'test.max_returns': max_returns,
                             'test.min_returns': min_returns,
                             'test.average_returns': avg_returns,
-                            'test.returns': self.test_returns,
-                            'test.final_value': self.cum_pv,
-                            'test.sharp_ratio': sharp_ratio}
+                            'test.final_value': self.cum_pv}
                 self._inject_summary(tag_dict, self.num_episode)
                 self.results = dict(
-                    sharp_ratio=sharp_ratio,
+                    sharp_ratio=final_sharp_ratio,
                     cumulative_returns=self.test_cumulative_returns,
                     drawdowns=self.test_drawdowns,
                     maximum_drawdows=max_drawdown)
@@ -242,7 +261,12 @@ class TradeRunnerMixin(RunnerMixin):
         self.ep_drawdowns = []
 
     def _build_recorders_play(self, avg_length):
+        self.test_avg_returns = deque(maxlen=avg_length)
+        self.test_avg_losses = deque(maxlen=avg_length)
+        self.test_avg_costs = deque(maxlen=avg_length)
         self.test_returns = []
         self.test_losses = []
         self.test_drawdowns = []
         self.test_cumulative_returns = []
+        self.test_costs = []
+        self.test_actions = []

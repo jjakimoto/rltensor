@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.contrib.layers import flatten
 from copy import deepcopy
 import numpy as np
 
@@ -48,11 +49,8 @@ class EIIEFeedForward(FeedForward):
             scope_name = "eiieff"
         upper_params = [{"name": "conv2d", "kernel_size": (1, 1),
                          "num_filters": 1, "stride": 1, "padding": 'VALID',
-                         "is_batch": False, 'activation': tf.nn.relu,
-                         "w_reg": ["l2", 1e-8]},
-                        {"name": None,
-                         "activation": tf.nn.softmax,
-                         "is_flatten": True}]
+                         "is_batch": False, 'activation': None,
+                         "w_reg": ["l2", 1e-8]}]
         if isinstance(action_dim, int):
             self.shape = (action_dim,)
         else:
@@ -62,13 +60,17 @@ class EIIEFeedForward(FeedForward):
         self.min_value = min_value
         self.eiie_reuse = False
         self.action_dim = np.prod(self.shape)
-        self.upper_model = FeedForward(upper_params, scope="eiie_upper")
+        self.upper_model = FeedForward(upper_params, scope_name="eiie_upper")
 
-    def __call__(self, x, training=True, addtional_x=None):
+    def __call__(self, x, training=True, additional_x=None):
         x = super().__call__(x, training)
-        if addtional_x is not None:
-            x = tf.concat((x, addtional_x), axis=-1)
+        self.intermediate_x = x
+        if additional_x is not None:
+            x = tf.concat((x, additional_x), axis=-1)
         x = self.upper_model(x, training)
+        x = flatten(x)
+        self.prev_activation = x
+        x = tf.nn.softmax(x)
         if self.eiie_reuse is False:
             self.variables = self.variables + self.upper_model.variables
             self.eiie_reuse = True
@@ -83,8 +85,9 @@ class EIIEFeedForward(FeedForward):
         return self.min_value + (self.max_value - self.min_value) * sampled
 
     def sample(self, num_samples, *args, **kwargs):
-        size = (num_samples,) + self.shape
-        sampled = np.random.dirichlet(alpha=np.ones(self.shape), size=size)
+        sampled = np.random.uniform(size=((num_samples,) + self.shape))
+        sum_sampled = utils.sum_keep_shape_array(sampled, axis=-1)
+        sampled = sampled / sum_sampled
         return self.min_value + (self.max_value - self.min_value) * sampled
 
 

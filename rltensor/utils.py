@@ -6,6 +6,14 @@ import tensorflow as tf
 epsilon = 1e-6
 
 
+def sum_keep_shape_array(x, axis=-1):
+    sum_x = np.sum(x, axis=axis, keepdims=True)
+    shape = [1] * len(x.shape)
+    shape[axis] = x.shape[axis]
+    sum_x = np.tile(sum_x, shape)
+    return sum_x
+
+
 def sum_keep_shape(x, axis=-1):
     x_sum = tf.reduce_sum(x, axis=axis, keep_dims=True)
     shape = [1] * len(x.get_shape().as_list())

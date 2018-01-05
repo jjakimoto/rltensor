@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from rltensor.processors import AtariProcessor
-from rltensor.networks import Categorical, Dirichlet
+from rltensor.networks import Categorical, EIIEFeedForward
 
 
 scale = 10000
@@ -53,14 +53,14 @@ T = 100000
 def eiie_config():
     conf = agent_config()
     _eiie_config = dict(
-        actor_cls=Dirichlet,
+        actor_cls=EIIEFeedForward,
         actor_spec=[{"name": "conv2d", "kernel_size": (3, 1),
                      "num_filters": 2, "stride": 1, "padding": 'VALID',
                      "is_batch": False, 'activation': tf.nn.relu,
                      "w_reg": ["l2", 1e-8]},
                     {"name": "conv2d", "kernel_size": (48, 1),
                      "num_filters": 20, "stride": 1, "padding": 'VALID',
-                     "is_batch": False, 'activation': tf.nn.relu,
+                     "is_batch": True, 'activation': tf.nn.relu,
                      "w_reg": ["l2", 1e-8]}],
         memory_limit=T,
         window_length=50,

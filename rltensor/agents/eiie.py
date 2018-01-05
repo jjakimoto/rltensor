@@ -2,7 +2,7 @@ import tensorflow as tf
 
 from .agent import Agent
 from rltensor.utils import get_shape
-from rltensor.networks import Dirichlet
+from rltensor.networks import EIIEFeedForward
 from rltensor.memories import TSMemory
 from rltensor.processors import TradeProcessor
 from rltensor.executions import TradeRunnerMixin
@@ -10,11 +10,12 @@ from rltensor.executions import TradeRunnerMixin
 
 class EIIE(TradeRunnerMixin, Agent):
 
-    def __init__(self, init_pv=100, env=None, action_spec=None,
+    def __init__(self, init_pv=100,
+                 env=None, action_spec=None,
                  state_spec=None, processor=None,
                  actor_spec=None,
                  optimizer_spec=None, lr_spec=None,
-                 actor_cls=Dirichlet, explore_spec=None,
+                 actor_cls=EIIEFeedForward, explore_spec=None,
                  memory_limit=10000, window_length=4, beta=5.0e-5,
                  is_prioritized=True, batch_size=32, error_clip=1.0,
                  t_learn_start=100, t_update_freq=1,
@@ -23,6 +24,7 @@ class EIIE(TradeRunnerMixin, Agent):
                  load_file_path=None,
                  is_debug=False, *args, **kwargs):
         self.init_pv = init_pv
+        self.commission_rate = env.commission_rate
         self.actor_spec = actor_spec
         self.actor_cls = actor_cls
         self.explore_spec = explore_spec
@@ -72,10 +74,9 @@ class EIIE(TradeRunnerMixin, Agent):
                                              get_shape(self.action_shape,
                                                        is_sequence=False),
                                              name='prev_action_ph')
-        _prev_action_ph = tf.expand_dims(self.prev_action_ph, axis=-1)
-        _state_ph = self.processor.ten
+        _prev_action_ph = tf.expand_dims(tf.expand_dims(self.prev_action_ph, axis=1), axis=-1)
         self.actor_action = self.actor(_state_ph, self.training_ph,
-                                       addtional_x=_prev_action_ph)
+                                       additional_x=_prev_action_ph)
         # Build critic objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32,
@@ -83,6 +84,10 @@ class EIIE(TradeRunnerMixin, Agent):
                                         name="reward_ph")
         actor_returns = tf.reduce_sum(self.actor_action * self.reward_ph,
                                       axis=-1)
+        # index 0 has to be cash
+        trade_amount = tf.reduce_sum(tf.abs(self.actor_action[:, 1:] - self.prev_action_ph[:, 1:]), axis=-1)
+        reduction_coef = 1. - self.commission_rate * trade_amount
+        actor_returns = (1. + actor_returns) * reduction_coef - 1.
         self.actor_value = tf.reduce_mean(tf.log(actor_returns + 1.))
         self.actor_loss = -self.actor_value
 
@@ -133,13 +138,16 @@ class EIIE(TradeRunnerMixin, Agent):
             actions = self.sess.run(self.actor_action, feed_dict=feed_dict)
             indices = [experience.index for experience in experiences]
             self._update_pvm(actions, indices)
+            # print('intermediate_x')
+            # print(self.sess.run(self.actor.prev_activation,
+            #                     feed_dict=feed_dict)[0])
         actor_loss = self.sess.run(self.actor_loss, feed_dict=feed_dict)
         return actor_loss, is_update
 
     def predict(self, state, prev_action, *args, **kwargs):
         action = self.sess.run(self.policy_action,
                                feed_dict={self.state_ph: [state],
-                                          self.
+                                          self.prev_action_ph: [prev_action],
                                           self.training_ph: False})[0]
         return action
 

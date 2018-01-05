@@ -1,5 +1,6 @@
 import numpy as np
 from collections import namedtuple, deque
+from copy import deepcopy
 
 from .core import BaseMemory, RingBuffer, zeroed_observation
 from .utils import sample_batch_indexes
@@ -22,7 +23,7 @@ class TSMemory(BaseMemory):
         self.rewards = RingBuffer(limit)
         self.terminals = RingBuffer(limit)
         self.observations = RingBuffer(limit)
-        self.recent_actions = deque(maxlen=window_length)
+        self.recent_actions = None
         self.beta = beta
 
     def sample(self, batch_size, *args, **kwargs):
@@ -43,7 +44,10 @@ class TSMemory(BaseMemory):
             reward = self.rewards[idx]
             terminal = self.terminals[idx]
             state = [self.observations[obs_i] for obs_i in range(idx - self.window_length + 1, idx + 1)]
-            scale = state[-1][0]
+            scale = np.array(state)[-1, :, 0]
+            shape = np.array(state).shape
+            scale = np.expand_dims(np.expand_dims(scale, axis=0), axis=-1)
+            scale = np.tile(scale, [shape[0], 1, shape[2]])
             state = state / scale
             experiences.append(TSExperience(state=state, action=action,
                                             reward=reward, terminal=terminal,
@@ -56,7 +60,7 @@ class TSMemory(BaseMemory):
         # This needs to be understood as follows: in `observation`,
         # take `action`, obtain `reward`
         # and weather the next state is `terminal` or not.
-        self.recent_actions.append(action)
+        self.recent_actions = deepcopy(action)
         if is_store:
             self.observations.append(observation)
             self.actions.append(action)
@@ -75,19 +79,4 @@ class TSMemory(BaseMemory):
         return self.nb_entries - 1
 
     def get_recent_actions(self):
-        # This code is slightly complicated by the fact that subsequent observations might be
-        # from different episodes. We ensure that an experience never spans multiple episodes.
-        # This is probably not that important in practice but it seems cleaner.
-        actions = []
-        idx = len(self.recent_observations) - 1
-        for offset in range(0, self.window_length):
-            current_idx = idx - offset
-            current_terminal = self.recent_terminals[current_idx - 1] if current_idx - 1 >= 0 else False
-            if current_idx < 0 or (not self.ignore_episode_boundaries and current_terminal):
-                # The previously handled observation was terminal, don't add the current one.
-                # Otherwise we would leak into a different episode.
-                break
-            actions.insert(0, self.recent_actions[current_idx])
-        while len(actions) < self.window_length:
-            actions.insert(0, zeroed_observation(actions[0]))
-        return actions
+        return self.recent_actions

@@ -4,13 +4,15 @@ import pandas as pd
 import numpy as np
 
 from rltensor.environments.core import Env
-from rltensor.environments.utils import seconds2date
+from .utils import seconds2date, calculate_pv_after_commission
 
 
 class TradeEnv(Env):
     def __init__(self, data, start=None, end=None,
-                 add_cash=True, keys=["close", "open", "high"]):
+                 add_cash=True, keys=["close", "high", "low"],
+                 commission_rate=2.5e-3):
         self.keys = keys
+        self.commission_rate = commission_rate
         data = deepcopy(data)
         self.symbols = list(data.keys())
         # Build imputed data with columns key
@@ -58,12 +60,12 @@ class TradeEnv(Env):
             self.start = self.time_index[0]
         else:
             start = pd.Timestamp(start)
-            self.start = min(start, self.time_index[0])
+            self.start = max(start, self.time_index[0])
         if end is None:
             self.end = self.time_index[-1]
         else:
             end = pd.Timestamp(end)
-            self.end = max(end, self.time_index[-1])
+            self.end = min(end, self.time_index[-1])
 
     def _reset(self):
         self.current_time = self.start
@@ -71,6 +73,7 @@ class TradeEnv(Env):
         self.prev_bars = self._get_bar()
         # observation = self._get_observation(self.prev_bars)
         observation = self.prev_bars
+        self.prev_action = np.array([1.] + list(np.zeros(self.action_dim - 1)))
         return observation
 
     def _step(self, action, is_training=True, *args, **kwargs):
@@ -82,9 +85,24 @@ class TradeEnv(Env):
         # observation = self._get_observation(current_bars)
         observation = current_bars
         terminal = self._get_terminal()
+        trade_amount = np.sum(np.abs(action[1:] - self.prev_action[1:]))
+        # We do not calculate actual mu for speeding up
+        if not is_training:
+            mu = calculate_pv_after_commission(action,
+                                               self.prev_action,
+                                               self.commission_rate)
+            returns = mu * (returns + 1.) - 1.
+            cost = 1 - mu
+        else:
+            cost = 0
+        self.prev_action = deepcopy(action)
         reward = np.sum(returns * action)
-        info = {}
-        info["returns"] = returns
+        info = {
+            "reward": reward,
+            "returns": returns,
+            "cost": cost,
+            'trade_amount': trade_amount
+        }
         return observation, reward, terminal, info
 
     def _update_time(self):
