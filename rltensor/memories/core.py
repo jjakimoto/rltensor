@@ -18,9 +18,14 @@ class RingBuffer(object):
         return self.length
 
     def __getitem__(self, idx):
-        if idx < 0 or idx >= self.length:
+        if idx < 0 or idx >= self.maxlen:
             raise KeyError("idx={}".format(idx))
         return self.data[(self.start + idx) % self.maxlen]
+
+    def __setitem__(self, idx, item):
+        if idx < 0 or idx >= self.length:
+            raise KeyError("idx={}".format(idx))
+        self.data[(self.start + idx) % self.maxlen] = item
 
     def append(self, v):
         if self.length < self.maxlen:
@@ -52,6 +57,7 @@ class BaseMemory(object):
         self.window_length = window_length
         self.ignore_episode_boundaries = ignore_episode_boundaries
 
+        self.most_recent_observation = None
         self.recent_observations = deque(maxlen=window_length)
         self.recent_terminals = deque(maxlen=window_length)
 
@@ -59,16 +65,17 @@ class BaseMemory(object):
         raise NotImplementedError()
 
     def append(self, observation, action, reward, terminal, info, is_store=True):
-        self.recent_observations.append(observation)
+        self.recent_observations.append(self.most_recent_observation)
         self.recent_terminals.append(terminal)
+        self.most_recent_observation = deepcopy(observation)
 
     def get_recent_state(self):
         # This code is slightly complicated by the fact that subsequent observations might be
         # from different episodes. We ensure that an experience never spans multiple episodes.
         # This is probably not that important in practice but it seems cleaner.
-        state = []
+        state = [self.most_recent_observation]
         idx = len(self.recent_observations) - 1
-        for offset in range(0, self.window_length):
+        for offset in range(0, self.window_length - 1):
             current_idx = idx - offset
             current_terminal = self.recent_terminals[current_idx - 1] if current_idx - 1 >= 0 else False
             if current_idx < 0 or (not self.ignore_episode_boundaries and current_terminal):

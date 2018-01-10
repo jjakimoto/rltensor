@@ -79,7 +79,7 @@ class FeedForward(BaseNetwork):
                                                           momentum=0.9,
                                                           reuse=self.reuse,
                                                           name="batch_norm")
-                    if "activation" in params:
+                    if "activation" in params and params["activation"]:
                         x = params["activation"](x)
             if self.is_sequence:
                 dim = x.get_shape().as_list()[1:]

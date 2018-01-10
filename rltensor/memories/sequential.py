@@ -79,16 +79,18 @@ class SequentialMemory(BaseMemory):
         assert len(experiences) == batch_size
         return experiences
 
-    def append(self, observation, action, reward, terminal, info, is_store=True):
-        super(SequentialMemory, self).append(observation, action, reward, terminal, info, is_store=is_store)
-
+    def append(self, observation, action, reward,
+               terminal, info, is_store=True):
         # This needs to be understood as follows: in `observation`, take `action`, obtain `reward`
         # and weather the next state is `terminal` or not.
         if is_store:
-            self.observations.append(observation)
+            self.observations.append(self.most_recent_observation)
             self.actions.append(action)
             self.rewards.append(reward)
             self.terminals.append(terminal)
+        # This method updates most_recent_observation
+        super(SequentialMemory, self).append(observation, action, reward,
+                                             terminal, info, is_store=is_store)
 
     @property
     def nb_entries(self):
