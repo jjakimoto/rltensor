@@ -65,9 +65,9 @@ def eiie_config():
         memory_limit=T,
         window_length=50,
         batch_size=50,
-        init_pv=100,
+        init_pv=1.,
         beta=5.0e-5,
-        lr_spec={"lr_init": 3.0e-5, "lr_decay_step": 5 * scale,
+        lr_spec={"lr_init": 3.0e-3, "lr_decay_step": 1000,
                  "lr_decay": 0.96, "lr_min": 3.0e-5},
     )
     conf.update(_eiie_config)

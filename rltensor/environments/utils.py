@@ -1,4 +1,5 @@
 from datetime import datetime
+from copy import deepcopy
 import time
 import os
 import pandas as pd
@@ -11,6 +12,8 @@ def calculate_pv_after_commission(w1, w0, commission_rate):
     @:param w0: rebalanced last period portfolio vector, first element is btc
     @:param commission_rate: rate of commission fee, proportional to the transaction cost
     """
+    w1 = deepcopy(w1)
+    w0 = deepcopy(w0)
     mu0 = 1
     mu1 = 1 - 2 * commission_rate + commission_rate ** 2
     while abs(mu1 - mu0) > 1e-10:
@@ -63,7 +66,7 @@ def get_data(pair, data_dir, start, end, period=1800):
     df.to_csv(outf, index=False, columns=COLUMNS)
     outf.close()
     print("Finish.")
-    time.sleep(20)
+    time.sleep(5)
 
 
 def convert_time(t):

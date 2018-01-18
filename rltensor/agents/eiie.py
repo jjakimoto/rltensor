@@ -1,7 +1,9 @@
 import tensorflow as tf
+import numpy as np
+from tensorflow.contrib.layers import fully_connected, conv2d
 
 from .agent import Agent
-from rltensor.utils import get_shape
+from rltensor.utils import get_shape, sum_keep_shape_array
 from rltensor.networks import EIIEFeedForward
 from rltensor.memories import TSMemory
 from rltensor.processors import TradeProcessor
@@ -10,14 +12,15 @@ from rltensor.executions import TradeRunnerMixin
 
 class EIIE(TradeRunnerMixin, Agent):
 
-    def __init__(self, init_pv=100,
+    def __init__(self, init_pv=1.,
                  env=None, action_spec=None,
                  state_spec=None, processor=None,
                  actor_spec=None,
                  optimizer_spec=None, lr_spec=None,
                  actor_cls=EIIEFeedForward, explore_spec=None,
                  memory_limit=10000, window_length=4, beta=5.0e-5,
-                 is_prioritized=True, batch_size=32, error_clip=1.0,
+                 is_prioritized=True, is_volume=False,
+                 batch_size=32, error_clip=1.0,
                  t_learn_start=100, t_update_freq=1,
                  min_r=None, max_r=None, sess=None,
                  env_name="env", tensorboard_dir="./logs",
@@ -31,9 +34,11 @@ class EIIE(TradeRunnerMixin, Agent):
         self.memory_limit = memory_limit
         self.window_length = window_length
         self.beta = beta
+        self.is_volume = is_volume
         self.memory = self._get_memory(limit=self.memory_limit,
                                        window_length=self.window_length,
-                                       beta=self.beta)
+                                       beta=self.beta,
+                                       is_volume=is_volume)
         self.batch_size = batch_size
         # Make sure having enough data for sampling
         t_learn_start = max(t_learn_start, batch_size + window_length - 1)
@@ -74,17 +79,25 @@ class EIIE(TradeRunnerMixin, Agent):
                                              get_shape(self.action_shape,
                                                        is_sequence=False),
                                              name='prev_action_ph')
-        _prev_action_ph = tf.expand_dims(tf.expand_dims(self.prev_action_ph, axis=1), axis=-1)
+        _prev_action_ph = tf.expand_dims(
+            tf.expand_dims(self.prev_action_ph[:, 1:], axis=1),
+            axis=-1)
         self.actor_action = self.actor(_state_ph, self.training_ph,
                                        additional_x=_prev_action_ph)
+                                       # additional_x=None)
+        # self.actor_ratio = fully_connected(self.actor.prev_activation, 1,
+        #                                    activation_fn=tf.nn.sigmoid,
+        #                                    scope="ratio")
+        # self.actor_ratio = tf.tile(self.actor_ratio, [1, self.action_shape])
         # Build critic objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32,
-                                        get_shape(self.action_shape),
+                                        get_shape(self.action_shape - 1),
                                         name="reward_ph")
-        actor_returns = tf.reduce_sum(self.actor_action * self.reward_ph,
-                                      axis=-1)
+        actor_returns = tf.reduce_sum(
+            self.actor_action[:, 1:] * self.reward_ph, axis=-1)
         # index 0 has to be cash
+        # self.actor_action = self.actor_action * self.actor_ratio + self.prev_action_ph * (1 - self.actor_ratio)
         trade_amount = tf.reduce_sum(tf.abs(self.actor_action[:, 1:] - self.prev_action_ph[:, 1:]), axis=-1)
         reduction_coef = 1. - self.commission_rate * trade_amount
         actor_returns = (1. + actor_returns) * reduction_coef - 1.
@@ -118,8 +131,9 @@ class EIIE(TradeRunnerMixin, Agent):
             result = None
         return result
 
-    def nonobserve_learning(self):
-        experiences = self.memory.sample(self.batch_size)
+    def nonobserve_learning(self, use_newest=False):
+        experiences = self.memory.sample(self.batch_size,
+                                         use_newest=use_newest)
         result = self.learning_minibatch(experiences, is_update=True)
         return result
 
@@ -133,14 +147,16 @@ class EIIE(TradeRunnerMixin, Agent):
                                   for experience in experiences],
             self.training_ph: True,
         }
+        # step = self.global_step
+        # if step % 1000 == 0 or step == 1:
+        #     print('********action')
+        #     action = self.sess.run(self.actor_action, feed_dict=feed_dict)[0]
+        #     print(action)
         if is_update:
             self.sess.run(self.actor_optim, feed_dict=feed_dict)
             actions = self.sess.run(self.actor_action, feed_dict=feed_dict)
             indices = [experience.index for experience in experiences]
             self._update_pvm(actions, indices)
-            # print('intermediate_x')
-            # print(self.sess.run(self.actor.prev_activation,
-            #                     feed_dict=feed_dict)[0])
         actor_loss = self.sess.run(self.actor_loss, feed_dict=feed_dict)
         return actor_loss, is_update
 
@@ -149,12 +165,18 @@ class EIIE(TradeRunnerMixin, Agent):
                                feed_dict={self.state_ph: [state],
                                           self.prev_action_ph: [prev_action],
                                           self.training_ph: False})[0]
+        # Make sure summation is one
+        action_sum = min(1., np.sum(action[1:]))
+        action[0] = 1. - action_sum
+        # action = np.random.uniform(size=action.shape)
+        # action = action / sum_keep_shape_array(action)
         return action
 
-    def _get_memory(self, limit, window_length, beta):
+    def _get_memory(self, limit, window_length, beta, is_volume):
         return TSMemory(limit=limit,
                         window_length=window_length,
-                        beta=beta)
+                        beta=beta,
+                        is_volume=is_volume)
 
     def _update_pvm(self, actions, indices):
         for action, idx in zip(actions, indices):

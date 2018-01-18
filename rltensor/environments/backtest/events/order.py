@@ -7,6 +7,7 @@ class OrderEvent(Event):
     The order contains a symbol (e.g. GOOG), a type (market or limit),
     quantity and a direction.
     """
+
     def __init__(self, symbol, order_type, quantity, direction):
         """
         Initialises the order type, setting whether it is
@@ -24,7 +25,7 @@ class OrderEvent(Event):
         self.order_type = order_type
         self.quantity = quantity
         self.direction = direction
-        
+
     def print_order(self):
         """
         Outputs the values within the Order.

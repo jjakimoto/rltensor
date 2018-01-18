@@ -1,5 +1,4 @@
 import tensorflow as tf
-from tensorflow.contrib.layers import flatten
 from copy import deepcopy
 import numpy as np
 
@@ -50,7 +49,8 @@ class EIIEFeedForward(FeedForward):
         upper_params = [{"name": "conv2d", "kernel_size": (1, 1),
                          "num_filters": 1, "stride": 1, "padding": 'VALID',
                          "is_batch": False, 'activation': None,
-                         "w_reg": ["l2", 1e-8]}]
+                         "w_reg": ["l2", 1e-8]},
+                        {'name': None, 'is_flatten': True}]
         if isinstance(action_dim, int):
             self.shape = (action_dim,)
         else:
@@ -68,11 +68,19 @@ class EIIEFeedForward(FeedForward):
         if additional_x is not None:
             x = tf.concat((x, additional_x), axis=-1)
         x = self.upper_model(x, training)
-        x = flatten(x)
+        with tf.variable_scope(self.scope_name, reuse=self.eiie_reuse):
+            cash_bias = tf.get_variable(name='cash_bais',
+                                        shape=[1],
+                                        initializer=tf.zeros_initializer(),
+                                        trainable=True)
+            batch_size = tf.shape(x)[0]
+            _cash_bias = tf.expand_dims(cash_bias, axis=0)
+            _cash_bias = tf.tile(_cash_bias, [batch_size, 1])
+        x = tf.concat((_cash_bias, x), axis=1)
         self.prev_activation = x
         x = tf.nn.softmax(x)
         if self.eiie_reuse is False:
-            self.variables = self.variables + self.upper_model.variables
+            self.variables = self.variables + self.upper_model.variables + [cash_bias,]
             self.eiie_reuse = True
         return x
 

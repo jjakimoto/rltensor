@@ -2,6 +2,7 @@ import tensorflow as tf
 import time
 import os
 from copy import deepcopy
+import shutil
 
 from rltensor.processors import DefaultProcessor
 from rltensor.executions import RunnerMixin
@@ -83,6 +84,10 @@ class Agent(RunnerMixin):
         self._num_episode = tf.Variable(0, trainable=False)
         # Build tensorflow network
         st = time.time()
+        # Clear previous logs
+        if os.path.isdir(self.tensorboard_dir):
+            print('delete')
+            shutil.rmtree(self.tensorboard_dir)
         print("Building tensorflow graph...")
         with self.sess.as_default():
             self.update_step_op = tf.assign(self._global_step,
@@ -136,6 +141,10 @@ class Agent(RunnerMixin):
             _path = ".".join([file_path, "meta"])
             if os.path.isfile(_path):
                 raise NameError("%s already exists." % file_path)
+        # Make directory if not exists
+        dir_name = '/'.split(file_path)[0]
+        if not os.path.isdir(dir_name):
+            os.mkdir(dir_name)
         save_path = self.saver.save(self.sess, file_path)
         print("Model saved in file: %s" % save_path)
 

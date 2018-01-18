@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.contrib.layers import fully_connected, conv2d
 from tensorflow.contrib.layers import conv2d_transpose, flatten
+from copy import deepcopy
 
 from .core import BaseNetwork
 from .utils import get_regularizer
@@ -9,6 +10,7 @@ from .utils import get_regularizer
 class FeedForward(BaseNetwork):
     def __init__(self, model_params, scope_name,
                  is_sequence=False, *args, **kwargs):
+        model_params = deepcopy(model_params)
         self.is_sequence = is_sequence
         super().__init__(model_params, scope_name, *args, **kwargs)
 

@@ -1,9 +1,11 @@
 import time
 import numpy as np
+import pandas as pd
 from collections import deque
 from copy import deepcopy
 from tqdm import tqdm
 from six.moves import xrange
+import matplotlib.pyplot as plt
 
 from .runner import RunnerMixin
 
@@ -53,7 +55,9 @@ class TradeRunnerMixin(RunnerMixin):
             save_file_path=None,
             overwrite=True,
             log_freq=1000,
-            avg_length=1000):
+            test_freq=100000,
+            avg_length=1000,
+            test_start=None):
         # Save Model
         self.save_params(save_file_path, overwrite)
         # Record Viodeo
@@ -80,19 +84,74 @@ class TradeRunnerMixin(RunnerMixin):
             self.fit_recent_observations =\
                 deepcopy(self.memory.recent_observations)
             self.fit_recent_terminals = deepcopy(self.memory.recent_terminals)
+            self.fit_recent_actions = deepcopy(self.memory.recent_actions)
             pbar.close()
             print("Finished storing data.")
             # Start training
             for epoch in tqdm(xrange(num_epochs)):
-                # Update step
-                self.update_step()
+                # Test
+                """
+                step = self.global_step
+                if test_freq is not None and step % test_freq == 0:
+                    self.test_play(start=test_start, end=end, num_epochs=1,
+                                   log_freq=None,
+                                   avg_length=1000)
+                    plt.plot(self.test_cumulative_returns)
+                    plt.savefig('test_cumulative_retunrs_%d.jpg' % step)
+                    plt.close()
+                """
                 # Update parameters
                 response = self.nonobserve_learning()
-                self._record(response, log_freq)
+                # Update step
+                self.update_step()
+                self._record(response, log_freq=log_freq)
         except KeyboardInterrupt:
             pass
         # Update parameters before finishing
         self.save_params(save_file_path, True)
+
+    def test_play(self, start=None, end=None, num_epochs=1,
+                  log_freq=1000,
+                  avg_length=1000):
+        # accumulate results
+        _env = self.env
+        _env.set_trange(start, end)
+        observation = self._reset(_env, is_reset_memory=False)
+        self._build_recorders_play(avg_length)
+        # Start from the middle of training
+        self.st = time.time()
+        self.record_st = self.st
+        terminal = False
+        pbar = tqdm()
+        count = 0
+        try:
+            while not terminal:
+                pbar.update(1)
+                # 1. predict
+                state = self.get_recent_state()
+                recent_actions = self.get_recent_actions()
+                action = self.predict(state, recent_actions)
+                # 2. act
+                observation, reward, terminal, info =\
+                    _env.step(action, is_training=False)
+                # 3. store data and train network
+                response = self.observe(observation, action, reward,
+                                        terminal, info, training=False,
+                                        is_store=False)
+                count += 1
+                if count < self.memory.window_length:
+                    continue
+                self._update_status(observation, reward, terminal, info)
+                for epoch in xrange(num_epochs):
+                    # Update parameters
+                    response = self.nonobserve_learning(use_newest=False)
+                # Update step
+                self.update_step()
+                self._record_play(observation, reward, terminal, info,
+                                  action, response, log_freq)
+        except KeyboardInterrupt:
+            pass
+        pbar.close()
 
     def play(self, start=None, end=None, num_epochs=1,
              save_file_path=None,
@@ -104,9 +163,10 @@ class TradeRunnerMixin(RunnerMixin):
         # accumulate results
         _env = self.env
         _env.set_trange(start, end)
-        observation = self._reset(_env)
+        observation = self._reset(_env, is_reset_memory=True)
         self.memory.set_recent_data(self.fit_recent_observations,
-                                    self.fit_recent_terminals)
+                                    self.fit_recent_terminals,
+                                    self.fit_recent_actions)
         self._build_recorders_play(avg_length)
         # Start from the middle of training
         self.st = time.time()
@@ -129,10 +189,11 @@ class TradeRunnerMixin(RunnerMixin):
                                         terminal, info, training=False,
                                         is_store=True)
                 for epoch in xrange(num_epochs):
-                    # Update step
-                    self.update_step()
                     # Update parameters
-                    response = self.nonobserve_learning()
+                    # _response = self.nonobserve_learning(use_newest=False)
+                    response = self.nonobserve_learning(use_newest=True)
+                # Update step
+                self.update_step()
                 self._record_play(observation, reward, terminal, info,
                                   action, response, log_freq)
         except KeyboardInterrupt:
@@ -174,13 +235,6 @@ class TradeRunnerMixin(RunnerMixin):
 
     def _record_play(self, observation, reward, terminal, info,
                      action, response, log_freq):
-        # Update statistics
-        self.cum_pv *= (1. + reward)
-        # Calc drawdown
-        if self.cum_pv > self.peak_pv:
-            self.peak_pv = self.cum_pv
-        self.drawdown = (self.peak_pv - self.cum_pv) / self.peak_pv
-
         loss, is_update = response
         step = self.global_step
         # Update statistics
@@ -190,7 +244,8 @@ class TradeRunnerMixin(RunnerMixin):
         self.test_returns.append(reward)
         self.test_losses.append(loss)
         self.test_costs.append(info['cost'])
-        self.test_actions.append(action)
+        self.test_time_stamp.append(info['time'])
+        self.test_dist_actions.append(action)
         self.test_drawdowns.append(self.drawdown)
         self.test_cumulative_returns.append(self.cum_pv)
         # Write summary
@@ -217,8 +272,8 @@ class TradeRunnerMixin(RunnerMixin):
                 tag_dict['test.sharp_ratio'] = sharp_ratio
                 for i in range(self.action_shape):
                     name = 'test.action_%d' % i
-                    tag_dict[name] = np.array(self.test_actions)[:, i]
-                self.test_actions = []
+                    tag_dict[name] = np.array(self.test_dist_actions)[:, i]
+                self.test_dist_actions = []
                 tag_dict['test.returns'] = self.test_avg_returns
 
             self._inject_summary(tag_dict, step)
@@ -242,10 +297,12 @@ class TradeRunnerMixin(RunnerMixin):
                             'test.average_returns': avg_returns,
                             'test.final_value': self.cum_pv}
                 self._inject_summary(tag_dict, self.num_episode)
+                time_idx = pd.DatetimeIndex(self.test_time_stamp)
                 self.results = dict(
                     sharp_ratio=final_sharp_ratio,
-                    cumulative_returns=self.test_cumulative_returns,
-                    drawdowns=self.test_drawdowns,
+                    cumulative_returns=pd.DataFrame(self.test_cumulative_returns, index=time_idx),
+                    drawdowns=pd.DataFrame(self.test_drawdowns, index=time_idx),
+                    returns=pd.DataFrame(self.test_returns, index=time_idx),
                     maximum_drawdows=max_drawdown)
 
     def _build_recorders(self, avg_length):
@@ -270,3 +327,6 @@ class TradeRunnerMixin(RunnerMixin):
         self.test_cumulative_returns = []
         self.test_costs = []
         self.test_actions = []
+        self.test_dist_actions = []
+        self.test_time_stamp = []
+        self.test_price_returns = []
