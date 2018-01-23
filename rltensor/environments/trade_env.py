@@ -3,13 +3,14 @@ from collections import defaultdict
 import pandas as pd
 import numpy as np
 
+from rltensor.database.fetch import fetch
+from rltensor.database.utils import date2datetime
 from rltensor.environments.core import Env
-from .utils import seconds2date, calculate_pv_after_commission
+from .utils import calculate_pv_after_commission
 
 
 class TradeEnv(Env):
-    def __init__(self, data, start=None, end=None,
-                 add_cash=True,
+    def __init__(self, symbols,
                  price_keys=['open', 'high', 'low', 'weightedAverage'],
                  volume_keys=['volume', 'quoteVolume'],
                  commission_rate=2.5e-3,
@@ -17,19 +18,19 @@ class TradeEnv(Env):
         self.price_keys = price_keys
         self.volume_keys = volume_keys
         self.commission_rate = commission_rate
-        data = deepcopy(data)
-        self.symbols = list(data.keys())
+        self.symbols = symbols
+        self.num_stocks = len(self.symbols)
+
+    def set_trange(self, start=None, end=None):
+        data = fetch(start, end, self.symbols)
         # Build imputed data with columns key
         dfs = defaultdict(lambda: [])
         for symbol, val in data.items():
-            dates = val["date"].values[init_frame:]
-            dates = pd.DatetimeIndex([seconds2date(d) for d in dates])
-            df = pd.DataFrame(val.values[init_frame:],
-                              index=dates, columns=val.columns)
+            df = pd.DataFrame(val.values,
+                              index=val.index, columns=val.columns)
             df = df.loc[~df.index.duplicated(keep='first')]
             for col in val.columns:
-                if col != 'date':
-                    dfs[col].append(df[col])
+                dfs[col].append(df[col])
         for col in dfs.keys():
             df = pd.concat(dfs[col], axis=1, keys=self.symbols)
             df.interpolate(method='linear',
@@ -38,24 +39,16 @@ class TradeEnv(Env):
             dfs[col] = df
         self.dfs_time_index = df.index
         self.dfs = dfs
-        self.set_trange(start, end)
-        self.num_stocks = len(self.symbols)
-        self._reset()
 
-    def set_trange(self, start=None, end=None):
-        if start is None:
-            self.start = self.dfs_time_index[0]
-        else:
-            start = pd.Timestamp(start)
-            self.start = max(start, self.dfs_time_index[0])
-        if end is None:
-            self.end = self.dfs_time_index[-1]
-        else:
-            end = pd.Timestamp(end)
-            self.end = min(end, self.dfs_time_index[-1])
+        # Redefine actual time range
+        start = date2datetime(start)
+        self.start = max(start, self.dfs_time_index[0])
+        end = date2datetime(end)
+        self.end = min(end, self.dfs_time_index[-1])
 
         print('start:', self.start)
         print('end:', self.end)
+
         # Store imputed data with symbol keys
         price_data = {}
         price_data_val = []
@@ -63,7 +56,6 @@ class TradeEnv(Env):
             val = []
             for col in self.price_keys:
                 df = self.dfs[col][[symbol]]
-                df = df.loc[(df.index >= self.start) & (df.index <= self.end)]
                 val.append(df.values)
             self.time_index = df.index
             val = np.concatenate(val, axis=1)
@@ -78,7 +70,6 @@ class TradeEnv(Env):
             val = []
             for col in self.volume_keys:
                 df = self.dfs[col][[symbol]]
-                df = df.loc[(df.index >= self.start) & (df.index <= self.end)]
                 val.append(df.values)
             self.time_index = df.index
             val = np.concatenate(val, axis=1)
@@ -103,7 +94,7 @@ class TradeEnv(Env):
         prev_bars = self._get_prev_bar()
         returns = current_bars['price'][:, 0] / prev_bars['price'][:, 0] - 1.
         # observation = self._get_observation(current_bars)
-        observation = current_bars
+        observation = deepcopy(current_bars)
         terminal = self._get_terminal()
         trade_amount = np.sum(np.abs(action[1:] - self.prev_action[1:]))
         reward = np.sum(returns * action[1:])

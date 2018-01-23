@@ -84,11 +84,6 @@ class EIIE(TradeRunnerMixin, Agent):
             axis=-1)
         self.actor_action = self.actor(_state_ph, self.training_ph,
                                        additional_x=_prev_action_ph)
-                                       # additional_x=None)
-        # self.actor_ratio = fully_connected(self.actor.prev_activation, 1,
-        #                                    activation_fn=tf.nn.sigmoid,
-        #                                    scope="ratio")
-        # self.actor_ratio = tf.tile(self.actor_ratio, [1, self.action_shape])
         # Build critic objective function
         self.terminal_ph = tf.placeholder(tf.bool, (None,), name="terminal_ph")
         self.reward_ph = tf.placeholder(tf.float32,
@@ -97,7 +92,6 @@ class EIIE(TradeRunnerMixin, Agent):
         actor_returns = tf.reduce_sum(
             self.actor_action[:, 1:] * self.reward_ph, axis=-1)
         # index 0 has to be cash
-        # self.actor_action = self.actor_action * self.actor_ratio + self.prev_action_ph * (1 - self.actor_ratio)
         trade_amount = tf.reduce_sum(tf.abs(self.actor_action[:, 1:] - self.prev_action_ph[:, 1:]), axis=-1)
         reduction_coef = 1. - self.commission_rate * trade_amount
         actor_returns = (1. + actor_returns) * reduction_coef - 1.
@@ -147,11 +141,19 @@ class EIIE(TradeRunnerMixin, Agent):
                                   for experience in experiences],
             self.training_ph: True,
         }
-        # step = self.global_step
-        # if step % 1000 == 0 or step == 1:
-        #     print('********action')
-        #     action = self.sess.run(self.actor_action, feed_dict=feed_dict)[0]
-        #     print(action)
+        step = self.global_step
+        """
+        if step % 1000 == 0 or step == 1:
+            print('********action')
+            action = self.sess.run(self.actor_action, feed_dict=feed_dict)[0]
+            print(action)
+            print('terminal')
+            print(experiences[0].terminal)
+            print('reward')
+            print(experiences[0].reward)
+            print('state')
+            print(experiences[0].state.shape, experiences[0].state)
+        """
         if is_update:
             self.sess.run(self.actor_optim, feed_dict=feed_dict)
             actions = self.sess.run(self.actor_action, feed_dict=feed_dict)
@@ -168,8 +170,7 @@ class EIIE(TradeRunnerMixin, Agent):
         # Make sure summation is one
         action_sum = min(1., np.sum(action[1:]))
         action[0] = 1. - action_sum
-        # action = np.random.uniform(size=action.shape)
-        # action = action / sum_keep_shape_array(action)
+
         return action
 
     def _get_memory(self, limit, window_length, beta, is_volume):

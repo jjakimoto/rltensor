@@ -105,7 +105,7 @@ class TSMemory(BaseMemory):
 
     def _construct_state(self, observations):
         # Normalize price and volume seprately
-        price_state = [observation['price'] for observation in observations]
+        price_state = np.array([observation['price'] for observation in observations])
         price_scale = np.array(price_state)[-1, :, 0]
         shape = np.array(price_state).shape
         price_scale = np.expand_dims(np.expand_dims(price_scale, axis=0),
