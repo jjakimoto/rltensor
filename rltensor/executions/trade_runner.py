@@ -137,7 +137,7 @@ class TradeRunnerMixin(RunnerMixin):
                 # 3. store data and train network
                 response = self.observe(observation, action, reward,
                                         terminal, info, training=False,
-                                        is_store=False)
+                                        is_store=True)
                 count += 1
                 if count < self.memory.window_length:
                     continue
@@ -163,10 +163,7 @@ class TradeRunnerMixin(RunnerMixin):
         # accumulate results
         _env = self.env
         _env.set_trange(start, end)
-        observation = self._reset(_env, is_reset_memory=True)
-        self.memory.set_recent_data(self.fit_recent_observations,
-                                    self.fit_recent_terminals,
-                                    self.fit_recent_actions)
+        observation = self._reset(_env, is_reset_memory=False)
         self._build_recorders_play(avg_length)
         # Start from the middle of training
         self.st = time.time()

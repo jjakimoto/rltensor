@@ -13,8 +13,7 @@ class TradeEnv(Env):
     def __init__(self, symbols,
                  price_keys=['open', 'high', 'low', 'weightedAverage'],
                  volume_keys=['volume', 'quoteVolume'],
-                 commission_rate=2.5e-3,
-                 init_frame=300):
+                 commission_rate=2.5e-3):
         self.price_keys = price_keys
         self.volume_keys = volume_keys
         self.commission_rate = commission_rate

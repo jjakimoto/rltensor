@@ -1,2 +1,0 @@
-from .mac import MovingAverageCrossStrategy
-from .downside_protection import DownsideProtectionStrategy
