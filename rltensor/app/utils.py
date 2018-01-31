@@ -3,33 +3,21 @@ from pytrade_env.runners import RLEnv
 from rltensor.configs import eiie_config
 from rltensor.agents import EIIE
 import tensorflow as tf
-import os
+import pickle
 
 
 class Context:
     commission_rate = 2.5e-3
     price_keys = ['open', 'high', 'low']
-    volume_keys = ['volume', 'quoteVolume']
+    volume_keys = []
     initial_capital = 1.0
 
 
-def train_model(start, end, load_file_path=None, save_file_path=None,
-                num_epochs=int(2e6), agent_cls=EIIE):
-    low_volume_ticker = ['USDT_BCH', 'USDT_ZEC']
-    # Load data
-    data_dir = "/home/tomoaki/work/Development/cryptocurrency/data"
-    filenames = os.listdir(data_dir)
-    symbols = []
-    for name in filenames:
-        if '.csv' in name and name.startswith('USD'):
-            flag = True
-            for tick in low_volume_ticker:
-                if name.startswith(tick):
-                    flag = False
-            if flag:
-                symbol = name.split('.')[0]
-                symbols.append(symbol)
-
+def train_model(start, end=None, load_file_path=None, save_file_path=None,
+                num_epochs=int(2e6), agent_cls=EIIE,
+                symbols_file="ticker1.pkl"):
+    file = open(symbols_file, "rb")
+    symbols = pickle.load(file)
     context = Context()
     context.start = start
     context.end = end
@@ -51,7 +39,12 @@ def train_model(start, end, load_file_path=None, save_file_path=None,
     )
 
     if save_file_path is None:
-        save_file_path = 'params{}-{}/model.ckpt'.format(start, end)
+        _start = start.split(" ")
+        _start = "_".join(_start)
+        if end is None:
+            save_file_path = 'params{}/model.ckpt'.format(_start)
+        else:
+            save_file_path = 'params{}-{}/model.ckpt'.format(start, end)
 
     tf.reset_default_graph()
     agent = agent_cls(env=env, load_file_path=load_file_path, **conf)

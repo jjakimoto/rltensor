@@ -21,9 +21,12 @@ class APPAgent(object):
         return np.array(json.loads(response.read()))
 
     @classmethod
-    def fit(cls, start, end, load_file_path=None, num_epochs=1):
+    def fit(cls, start, end=None, load_file_path=None, num_epochs=1):
         start = _preprocess_time(start)
-        end = _preprocess_time(end)
+        if end is None:
+            end = "none"
+        else:
+            end = _preprocess_time(end)
         if load_file_path is None:
             load_file_path = "none"
         options = "fit/" + start + "/" + end + "/" + load_file_path + "/" + str(num_epochs)
@@ -39,6 +42,6 @@ class APPAgent(object):
 
     @classmethod
     def update_model(cls, num_epochs=1):
-        url = os.path.join(cls.root_url, str(num_epochs))
+        url = os.path.join(cls.root_url, "update_model/" + str(num_epochs))
         response = urlopen(url)
         return response.read()

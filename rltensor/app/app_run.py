@@ -12,13 +12,16 @@ context = dict()
 
 
 # Have to run this function to get model
-@app.route("/fit/<start>/<end>/<load_file_path>/<int:num_epochs>")
+@app.route("/fit/<start>/<end>/<path:load_file_path>/<int:num_epochs>")
 def fit(start, end, load_file_path, num_epochs):
     # Preprocess
     start = start.split("_")
-    end = end.split("_")
     start = start[0] + " " + start[1]
-    end = end[0] + " " + end[1]
+    if end == "none":
+        end = None
+    else:
+        end = end.split("_")
+        end = end[0] + " " + end[1]
     if load_file_path.lower() == "none":
         load_file_path = None
     agent = train_model(start, end, load_file_path=load_file_path,

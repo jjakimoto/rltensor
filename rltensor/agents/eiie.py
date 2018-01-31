@@ -141,19 +141,6 @@ class EIIE(TradeRunnerMixin, Agent):
                                   for experience in experiences],
             self.training_ph: True,
         }
-        step = self.global_step
-        """
-        if step % 1000 == 0 or step == 1:
-            print('********action')
-            action = self.sess.run(self.actor_action, feed_dict=feed_dict)[0]
-            print(action)
-            print('terminal')
-            print(experiences[0].terminal)
-            print('reward')
-            print(experiences[0].reward)
-            print('state')
-            print(experiences[0].state.shape, experiences[0].state)
-        """
         if is_update:
             self.sess.run(self.actor_optim, feed_dict=feed_dict)
             actions = self.sess.run(self.actor_action, feed_dict=feed_dict)
