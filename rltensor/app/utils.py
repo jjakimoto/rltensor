@@ -18,6 +18,9 @@ def train_model(start, end=None, load_file_path=None, save_file_path=None,
                 symbols_file="ticker1.pkl"):
     file = open(symbols_file, "rb")
     symbols = pickle.load(file)
+    print("******************************symbols*********************")
+    print(symbols)
+    print("start", start, "end", end)
     context = Context()
     context.start = start
     context.end = end
