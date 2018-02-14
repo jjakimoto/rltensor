@@ -37,6 +37,8 @@ class EIIE(TradeRunnerMixin, Agent):
         self.window_length = window_length
         self.beta = beta
         self.is_volume = is_volume
+        if symbols is None and hasattr(env, "symbols"):
+            symbols = env.symbols
         self.symbols = symbols
         self.memory = self._get_memory(limit=self.memory_limit,
                                        window_length=self.window_length,
