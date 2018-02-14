@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from collections import deque
 from tensorflow.contrib.layers import fully_connected, conv2d
 
 from .agent import Agent
@@ -23,7 +24,8 @@ class EIIE(TradeRunnerMixin, Agent):
                  batch_size=32, error_clip=1.0,
                  t_learn_start=100, t_update_freq=1,
                  min_r=None, max_r=None, sess=None,
-                 env_name="env", tensorboard_dir="./logs",
+                 env_name="env", symbols=None, record_actions_length=10,
+                 tensorboard_dir="./logs",
                  load_file_path=None,
                  is_debug=False, *args, **kwargs):
         self.init_pv = init_pv
@@ -35,6 +37,7 @@ class EIIE(TradeRunnerMixin, Agent):
         self.window_length = window_length
         self.beta = beta
         self.is_volume = is_volume
+        self.symbols = symbols
         self.memory = self._get_memory(limit=self.memory_limit,
                                        window_length=self.window_length,
                                        beta=self.beta,
@@ -60,6 +63,9 @@ class EIIE(TradeRunnerMixin, Agent):
             load_file_path=load_file_path,
             is_debug=is_debug,
             *args, **kwargs)
+        self.record_actions_length = record_actions_length
+        self.actions_count = 0
+        self._build_actions_summaries(record_actions_length)
 
     def _build_graph(self):
         """Build all of the network and optimizations"""
@@ -149,7 +155,7 @@ class EIIE(TradeRunnerMixin, Agent):
         actor_loss = self.sess.run(self.actor_loss, feed_dict=feed_dict)
         return actor_loss, is_update
 
-    def predict(self, state, prev_action, *args, **kwargs):
+    def predict(self, state, prev_action, is_record=False, *args, **kwargs):
         action = self.sess.run(self.policy_action,
                                feed_dict={self.state_ph: [state],
                                           self.prev_action_ph: [prev_action],
@@ -157,7 +163,9 @@ class EIIE(TradeRunnerMixin, Agent):
         # Make sure summation is one
         action_sum = min(1., np.sum(action[1:]))
         action[0] = 1. - action_sum
-
+        if is_record:
+            self.actions_count += 1
+            self._inject_actions_summary(action, self.actions_count)
         return action
 
     def _get_memory(self, limit, window_length, beta, is_volume):
@@ -185,3 +193,27 @@ class EIIE(TradeRunnerMixin, Agent):
     @property
     def actor_variables(self):
         return self.actor.variables
+
+    def _build_actions_summaries(self, maxlen=10):
+        self.record_actions = deque(maxlen=maxlen)
+        if self.symbols is not None:
+            tags = ["Cash"] + list(self.symbols)
+        else:
+            tags = ["action_%d" % i for i in range(self.action_shape)]
+        self.action_tags = tags
+        for tag in self.action_tags:
+            self.summary_placeholders[tag] =\
+                tf.placeholder('float32', None, name=tag)
+            self.summary_ops[tag] = tf.summary.histogram(
+                tag,
+                self.summary_placeholders[tag])
+
+    def _inject_actions_summary(self, actions, step):
+        tag_dict = dict()
+        self.record_actions.append(actions)
+        if step % self.record_actions_length == 0:
+            actions_array = np.array(self.record_actions)
+            for i, tag in enumerate(self.action_tags):
+                action = actions_array[:, i]
+                tag_dict[tag] = action
+        self._inject_summary(tag_dict, step)

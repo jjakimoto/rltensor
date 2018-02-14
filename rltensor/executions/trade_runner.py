@@ -130,7 +130,7 @@ class TradeRunnerMixin(RunnerMixin):
                 # 1. predict
                 state = self.get_recent_state()
                 recent_actions = self.get_recent_actions()
-                action = self.predict(state, recent_actions)
+                action = self.predict(state, recent_actions, is_record=False)
                 # 2. act
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=False)
@@ -156,7 +156,7 @@ class TradeRunnerMixin(RunnerMixin):
     def play(self, start=None, end=None, num_epochs=1,
              save_file_path=None,
              overwrite=True,
-             log_freq=1000,
+             log_freq=1,
              avg_length=1000):
         # Save Model
         self.save_params(save_file_path, overwrite)
@@ -176,7 +176,7 @@ class TradeRunnerMixin(RunnerMixin):
                 # 1. predict
                 state = self.get_recent_state()
                 recent_actions = self.get_recent_actions()
-                action = self.predict(state, recent_actions)
+                action = self.predict(state, recent_actions, is_record=True)
                 # 2. act
                 observation, reward, terminal, info =\
                     _env.step(action, is_training=False)

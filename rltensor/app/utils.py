@@ -15,7 +15,7 @@ class Context:
 
 def train_model(start, end=None, load_file_path=None, save_file_path=None,
                 num_epochs=int(2e6), agent_cls=EIIE,
-                symbols_file="ticker1.pkl"):
+                symbols_file="ticker1.pkl", record_actions_length=10):
     file = open(symbols_file, "rb")
     symbols = pickle.load(file)
     print("******************************symbols*********************")
@@ -33,6 +33,8 @@ def train_model(start, end=None, load_file_path=None, save_file_path=None,
 
     default_config = eiie_config()
     conf.update(default_config)
+    conf["symbols"] = symbols
+    conf["record_actions_length"] = record_actions_length
 
     fit_config = dict(
         start=start,
